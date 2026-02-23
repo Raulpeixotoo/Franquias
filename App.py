@@ -11,8 +11,19 @@ from datetime import datetime
 app = Flask(__name__)
 
 # Configuração do Banco de Dados
+
 basedir = os.path.abspath(os.path.dirname(__file__))
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'banco.db')
+
+# Usa PostgreSQL no Render, SQLite localmente
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Render usa postgres:// mas SQLAlchemy precisa de postgresql://
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    # Localmente usa SQLite
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'banco.db')
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
@@ -551,4 +562,5 @@ def utility_processor():
     return dict(now=now)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
