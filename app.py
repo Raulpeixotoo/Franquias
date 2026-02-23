@@ -6,9 +6,10 @@ import re
 from datetime import datetime, date
 from collections import Counter
 
+# ✅ CORREÇÃO: __file__ com underscores
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
-    __name__,
+    __name__,  # ✅ CORREÇÃO: __name__ com underscores
     template_folder=os.path.join(basedir, 'templates'),
     static_folder=os.path.join(basedir, 'static') if os.path.exists(os.path.join(basedir, 'static')) else None
 )
@@ -18,10 +19,10 @@ database_url = os.environ.get('DATABASE_URL')
 if database_url:
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print(f"✅ Usando PostgreSQL")
+    print(f"✅ Usando PostgreSQL: {database_url[:50]}...")
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'banco.db')
-    print("⚠️ Usando SQLite")
+    print("⚠️ Usando SQLite (dados temporários)")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
@@ -365,7 +366,7 @@ def gerenciar(id):
         dados_form = request.form.to_dict()
         status_atualizado = {}
         
-        # ✅ CORREÇÃO: Loop com indentação correta
+        # ✅ Loop CORRETO com indentação adequada
         for item_config in sum(CATEGORIAS_REQUISITOS.values(), []):
             item_nome = item_config['nome']
             item_id = gerar_id_seguro(item_nome)
@@ -522,6 +523,7 @@ def utility_processor():
         return datetime.now()
     return dict(now=now)
 
+# ✅ CORREÇÃO: __name__ e __main__ com underscores
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
