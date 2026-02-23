@@ -25,7 +25,8 @@ else:
     print("⚠️ Usando SQLite")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+db = SQLAlchemy()
+db.init_app(app)
 
 # ✅ CORREÇÃO: Sem espaços extras
 TIPOS_UNIDADE = {
