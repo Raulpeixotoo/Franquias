@@ -9,13 +9,13 @@ from datetime import datetime
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
-app = Flask(__name__, 
-            template_folder=os.path.join(basedir, 'templates'),
-            static_folder=os.path.join(basedir, 'static'))
+app = Flask(
+    __name__,
+    template_folder=os.path.join(basedir, 'templates'),
+    static_folder=os.path.join(basedir, 'static') if os.path.exists(os.path.join(basedir, 'static')) else None
+)
 
 # Configuração do Banco de Dados
-
-basedir = os.path.abspath(os.path.dirname(__file__))
 
 # Usa PostgreSQL no Render, SQLite localmente
 database_url = os.environ.get('DATABASE_URL')
