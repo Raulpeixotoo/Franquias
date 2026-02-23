@@ -6,15 +6,15 @@ import re
 from datetime import datetime, date
 from collections import Counter
 
-# ✅ CORREÇÃO: __file__ com underscores
+
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
-    __name__,  # ✅ CORREÇÃO: __name__ com underscores
+    __name__,  
     template_folder=os.path.join(basedir, 'templates'),
     static_folder=os.path.join(basedir, 'static') if os.path.exists(os.path.join(basedir, 'static')) else None
 )
 
-# Configuração do Banco de Dados
+
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
@@ -27,7 +27,7 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- CONFIGURAÇÕES ---
+
 TIPOS_UNIDADE = {
     "CO": "Centro de Operações",
     "FL": "Filial",
@@ -122,13 +122,11 @@ CATEGORIAS_REQUISITOS = {
     ]
 }
 
-# --- FUNÇÃO PARA GERAR ID SEGURO ---
 def gerar_id_seguro(texto):
     texto_limpo = re.sub(r'[^\w\s]', '', texto)
     texto_limpo = re.sub(r'\s+', '_', texto_limpo)
     return texto_limpo.lower()
 
-# --- MODELO ---
 class Unidade(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nome = db.Column(db.String(100), nullable=False)
@@ -138,7 +136,6 @@ class Unidade(db.Model):
     status_unidade = db.Column(db.String(20), default="processo")
     checklist_status = db.Column(db.Text, default="{}")
 
-# --- FUNÇÕES DE ANÁLISE ---
 def verificar_atrasados(checklist_json):
     if not checklist_json or checklist_json == "{}":
         return []
@@ -257,7 +254,6 @@ def classificar_prazos(unidades, categorias):
     todos_prazos.sort(key=lambda x: (x['urgencia'] != 'atrasado', x['previsao']))
     return todos_prazos
 
-# --- ROTAS ---
 @app.route('/')
 def index():
     filtro_status = request.args.get('status', '')
@@ -366,7 +362,6 @@ def gerenciar(id):
         dados_form = request.form.to_dict()
         status_atualizado = {}
         
-        # ✅ Loop CORRETO com indentação adequada
         for item_config in sum(CATEGORIAS_REQUISITOS.values(), []):
             item_nome = item_config['nome']
             item_id = gerar_id_seguro(item_nome)
@@ -401,7 +396,7 @@ def gerenciar(id):
                     status_atualizado[f'obs_{item_nome}'] = obs
         
         unidade.checklist_status = json.dumps(status_atualizado, ensure_ascii=False)
-        db.session.commit()  # ✅ ESSENCIAL
+        db.session.commit()
         return redirect(url_for('index'))
     
     status_salvo = {}
