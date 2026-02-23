@@ -6,10 +6,9 @@ import re
 from datetime import datetime, date
 from collections import Counter
 
-# ✅ CORREÇÃO: __file__ com underscores
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
-    __name__,  # ✅ CORREÇÃO: __name__ com underscores
+    __name__,
     template_folder=os.path.join(basedir, 'templates'),
     static_folder=os.path.join(basedir, 'static') if os.path.exists(os.path.join(basedir, 'static')) else None
 )
@@ -17,34 +16,24 @@ app = Flask(
 # Configuração do Banco de Dados
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Corrige a URL do PostgreSQL
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     print("✅ Usando PostgreSQL")
     
-    # 🔥 FIX: Força o uso de psycopg2 com configuração adicional
+    # Configurações adicionais para PostgreSQL
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,
         'pool_recycle': 300,
-        'connect_args': {
-            'connect_timeout': 10,
-            'keepalives_idle': 30,
-            'keepalives_interval': 10,
-            'keepalives_count': 5
-        }
     }
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'banco.db')
-    print("⚠️ Usando SQLite")
+    print("⚠️ Usando SQLite (apenas para testes locais)")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# 🔥 FIX: Inicialização correta do SQLAlchemy
 db = SQLAlchemy()
 db.init_app(app)
 
-# Resto do seu código permanece IGUAL...
-# (todo o código das linhas 26 até o final permanece o mesmo)
 
 TIPOS_UNIDADE = {
     "CO": "Centro de Operações",
@@ -539,4 +528,5 @@ def utility_processor():
 # ✅ CORREÇÃO: __name__ e __main__ com underscores
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+
     app.run(host='0.0.0.0', port=port, debug=False)
