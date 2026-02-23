@@ -14,20 +14,25 @@ app = Flask(
 )
 
 # Configuração do Banco de Dados
+# Configuração do Banco de Dados
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     print("✅ Usando PostgreSQL")
     
-    # Configurações adicionais para PostgreSQL
+    # Configuração para asyncpg se necessário
+    if 'postgresql' in database_url and 'asyncpg' not in database_url:
+        database_url = database_url.replace('postgresql://', 'postgresql+asyncpg://')
+    
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,
         'pool_recycle': 300,
+        'connect_args': {
+            'connect_timeout': 10,
+            'server_settings': {'application_name': 'franquias_app'}
+        }
     }
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'banco.db')
-    print("⚠️ Usando SQLite (apenas para testes locais)")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -530,3 +535,4 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
 
     app.run(host='0.0.0.0', port=port, debug=False)
+
