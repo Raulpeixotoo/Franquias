@@ -5,10 +5,8 @@ import json
 import re
 from datetime import datetime, date
 from collections import Counter
-from datetime import datetime
 
 basedir = os.path.abspath(os.path.dirname(__file__))
-
 app = Flask(
     __name__,
     template_folder=os.path.join(basedir, 'templates'),
@@ -16,19 +14,16 @@ app = Flask(
 )
 
 # Configuração do Banco de Dados
-
-# Usa PostgreSQL no Render, SQLite localmente
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Render usa postgres:// mas SQLAlchemy precisa de postgresql://
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    print(f"✅ Usando PostgreSQL")
 else:
-    # Localmente usa SQLite
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'banco.db')
+    print("⚠️ Usando SQLite")
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
 # --- CONFIGURAÇÕES ---
@@ -37,9 +32,9 @@ TIPOS_UNIDADE = {
     "FL": "Filial",
     "LJ": "Loja Própria",
     "PA": "Posto de Atendimento",
-    "HB's": "Hub",
+    "HB": "Hub",
     "JE": "Franquia Light",
-    "Matriz": "Matriz"
+    "MATRIZ": "Matriz"
 }
 
 STATUS_UNIDADE = {
@@ -49,8 +44,6 @@ STATUS_UNIDADE = {
     "fechada": {"label": "🔴 Fechada", "class": "secondary"}
 }
 
-# --- NOVA ESTRUTURA DE CATEGORIAS ---
-# Cada item pode ser: 'checkbox' (padrão) ou 'field' (campo de formulário)
 CATEGORIAS_REQUISITOS = {
     "abertura/fechamento": [
         {"nome": "Data de Abertura ou Fechamento", "tipo": "checkbox"},
@@ -68,12 +61,11 @@ CATEGORIAS_REQUISITOS = {
         {"nome": "I.E.", "tipo": "checkbox"},
         {"nome": "Sócios RG", "tipo": "checkbox"},
         {"nome": "Sócios CPF", "tipo": "checkbox"},
-        {"nome": "Sócios RG", "tipo": "checkbox"},
-        {"nome": "sócios comprov. Residencia", "tipo": "checkbox"},
+        {"nome": "Sócios Comprov. Residencia", "tipo": "checkbox"},
         {"nome": "Fiador RG", "tipo": "checkbox"},
         {"nome": "Fiador CPF", "tipo": "checkbox"},
-        {"nome": "Fiador comprov. Residencia", "tipo": "checkbox"},
-        {"nome": "Escritura Im´vvel", "tipo": "checkbox"},
+        {"nome": "Fiador Comprov. Residencia", "tipo": "checkbox"},
+        {"nome": "Escritura Imóvel", "tipo": "checkbox"},
         {"nome": "Dados Bancários", "tipo": "checkbox"},
         {"nome": "Imóvel Franquia", "tipo": "checkbox"},
         {"nome": "MAE (Manual Assinatura Eletronica)", "tipo": "checkbox"}
@@ -83,15 +75,14 @@ CATEGORIAS_REQUISITOS = {
         {"nome": "Pedido Ativação Financeiro", "tipo": "checkbox"},
         {"nome": "Confirma Ativação Financeiro", "tipo": "checkbox"},
         {"nome": "Aprovação Financeira", "tipo": "approval"}
-        
     ],
     "💻 TI": [
         {"nome": "E-mail Oficial", "tipo": "checkbox"},
         {"nome": "Ponto da Unidade", "tipo": "checkbox"},
         {"nome": "Código Etiqueta Teca", "tipo": "checkbox"},
         {"nome": "Solicitação do email oficial", "tipo": "checkbox"},
-        {"nome": "Retormo email oficial ", "tipo": "checkbox"},
-        {"nome": "N° do Contrato ", "tipo": "checkbox"},
+        {"nome": "Retorno email oficial", "tipo": "checkbox"},
+        {"nome": "N° do Contrato", "tipo": "checkbox"},
         {"nome": "Subir Projuris", "tipo": "checkbox"},
         {"nome": "Assinado Projuris", "tipo": "checkbox"},
         {"nome": "Envio E-mail Oficial", "tipo": "checkbox"}
@@ -108,16 +99,16 @@ CATEGORIAS_REQUISITOS = {
         {"nome": "Pedido GRIS", "tipo": "checkbox"},
         {"nome": "Feedback GRIS", "tipo": "checkbox"}
     ],
-    "📝 Assinatura 4Desingn": [
-        {"nome": "Uniformes Entregues","tipo": "checkbox"},
-        {"nome": "Treinamento Operacional Concluído","tipo": "checkbox"},
-        {"nome": "Escala de Trabalho Definida","tipo": "checkbox"},
-        {"nome": "Envio da PAF","tipo": "checkbox"},
-        {"nome": "Assinatura PAF","tipo": "checkbox"},
-        {"nome": "Envio da CCF","tipo": "checkbox"},
-        {"nome": "Assinatura CCF","tipo": "checkbox"},
-        {"nome": "Envio da COF","tipo": "checkbox"},
-        {"nome": "Assinatura COF","tipo": "checkbox"}
+    "📝 Assinatura 4Design": [
+        {"nome": "Uniformes Entregues", "tipo": "checkbox"},
+        {"nome": "Treinamento Operacional Concluído", "tipo": "checkbox"},
+        {"nome": "Escala de Trabalho Definida", "tipo": "checkbox"},
+        {"nome": "Envio da PAF", "tipo": "checkbox"},
+        {"nome": "Assinatura PAF", "tipo": "checkbox"},
+        {"nome": "Envio da CCF", "tipo": "checkbox"},
+        {"nome": "Assinatura CCF", "tipo": "checkbox"},
+        {"nome": "Envio da COF", "tipo": "checkbox"},
+        {"nome": "Assinatura COF", "tipo": "checkbox"}
     ],
     "Outros": [
         {"nome": "e-mail equips", "tipo": "checkbox"},
@@ -150,7 +141,6 @@ class Unidade(db.Model):
 def verificar_atrasados(checklist_json):
     if not checklist_json or checklist_json == "{}":
         return []
-    
     try:
         dados = json.loads(checklist_json)
     except:
@@ -163,21 +153,17 @@ def verificar_atrasados(checklist_json):
         if isinstance(info, dict):
             concluido = info.get('concluido', False)
             previsao = info.get('previsao', '')
-            
             if not concluido and previsao and previsao < hoje:
                 atrasados.append({
                     'nome': item,
                     'previsao': previsao,
                     'dias_atraso': (date.today() - date.fromisoformat(previsao)).days
                 })
-    
     return atrasados
 
 def calcular_status_categorias(checklist_json, categorias):
     if not checklist_json or checklist_json == "{}":
-        return {cat: {"status": "nao_iniciado", "total": len(itens), "concluidos": 0} 
-                for cat, itens in categorias.items()}
-    
+        return {cat: {"status": "nao_iniciado", "total": len(itens), "concluidos": 0} for cat, itens in categorias.items()}
     try:
         dados = json.loads(checklist_json)
     except:
@@ -194,7 +180,6 @@ def calcular_status_categorias(checklist_json, categorias):
         for item_config in itens:
             item_nome = item_config['nome']
             info = dados.get(item_nome, {})
-            
             if item_config['tipo'] == 'checkbox':
                 if isinstance(info, dict):
                     if info.get('concluido', False):
@@ -203,7 +188,7 @@ def calcular_status_categorias(checklist_json, categorias):
                         previsao = info.get('previsao', '')
                         if previsao and previsao < hoje:
                             tem_atraso = True
-            else:  # campo de dados
+            else:
                 if info and info != '':
                     concluidos += 1
         
@@ -216,33 +201,17 @@ def calcular_status_categorias(checklist_json, categorias):
         else:
             status = "pendente"
         
-        resultado[categoria] = {
-            "status": status,
-            "total": total,
-            "concluidos": concluidos
-        }
-    
+        resultado[categoria] = {"status": status, "total": total, "concluidos": concluidos}
     return resultado
 
 def gerar_resumos(unidades):
     total = len(unidades)
-    abertas = 0
-    em_processo = 0
-    fechadas = 0
+    abertas = sum(1 for u in unidades if u.status_unidade == "aberta")
+    fechadas = sum(1 for u in unidades if u.status_unidade == "fechada")
+    em_processo = total - abertas - fechadas
     
-    ufs = Counter()
-    tipos = Counter()
-    
-    for u in unidades:
-        if u.status_unidade == "aberta":
-            abertas += 1
-        elif u.status_unidade == "fechada":
-            fechadas += 1
-        else:
-            em_processo += 1
-        
-        ufs[u.uf] += 1
-        tipos[u.tipo] += 1
+    ufs = Counter(u.uf for u in unidades)
+    tipos = Counter(u.tipo for u in unidades)
     
     return {
         'total': total,
@@ -253,63 +222,43 @@ def gerar_resumos(unidades):
         'tipos': dict(tipos)
     }
 
-
-# Adicione esta função no app.py (fora das rotas)
 def classificar_prazos(unidades, categorias):
-    """Retorna lista de todos os itens com previsão, classificados por urgência"""
     hoje = date.today()
     todos_prazos = []
-    
     for u in unidades:
         try:
             dados = json.loads(u.checklist_status) if u.checklist_status else {}
-            
             for item_nome, info in dados.items():
                 if isinstance(info, dict):
                     previsao = info.get('previsao', '')
                     concluido = info.get('concluido', False)
-                    
                     if previsao and not concluido:
                         data_prev = date.fromisoformat(previsao)
                         dias = (data_prev - hoje).days
-                        
-                        # Classifica por urgência
-                        if dias < 0:
-                            urgencia = 'atrasado'
-                        elif dias <= 7:
-                            urgencia = 'proximo'
-                        else:
-                            urgencia = 'futuro'
-                        
-                        # Encontra a categoria do item
+                        urgencia = 'atrasado' if dias < 0 else ('proximo' if dias <= 7 else 'futuro')
                         categoria = 'Outros'
                         for cat, itens in categorias.items():
                             for item_config in itens:
                                 if item_config['nome'] == item_nome:
                                     categoria = cat
                                     break
-                        
                         todos_prazos.append({
                             'unidade': u.nome,
                             'unidade_id': u.id,
                             'item': item_nome,
-                            'categoria': categoria.split(' ')[-1],  # Só o nome curto
+                            'categoria': categoria.split(' ')[-1],
                             'previsao': previsao,
                             'dias': dias,
                             'urgencia': urgencia
                         })
         except:
             pass
-    
-    # Ordena: atrasados primeiro, depois por data
     todos_prazos.sort(key=lambda x: (x['urgencia'] != 'atrasado', x['previsao']))
-    
     return todos_prazos
-# --- ROTAS ---
 
+# --- ROTAS ---
 @app.route('/')
 def index():
-    # --- FILTROS ---
     filtro_status = request.args.get('status', '')
     filtro_uf = request.args.get('uf', '')
     filtro_tipo = request.args.get('tipo', '')
@@ -317,37 +266,26 @@ def index():
     busca_nome = request.args.get('busca', '')
     
     unidades = Unidade.query.order_by(Unidade.nome.asc()).all()
-    
-    # Aplica os filtros
     unidades_filtradas = []
+    
     for u in unidades:
-        # Filtro por status
         if filtro_status and u.status_unidade != filtro_status:
             continue
-        
-        # Filtro por UF
         if filtro_uf and u.uf != filtro_uf:
             continue
-        
-        # Filtro por tipo
         if filtro_tipo and u.tipo != filtro_tipo:
             continue
-        
-        # Filtro por atraso
         if filtro_atraso == 'sim':
             atrasados = verificar_atrasados(u.checklist_status)
             if not atrasados:
                 continue
-        
-        # Busca por nome
         if busca_nome and busca_nome.lower() not in u.nome.lower():
             continue
-        
         unidades_filtradas.append(u)
     
     resumos = gerar_resumos(unidades_filtradas)
-    
     unidades_info = []
+    
     for u in unidades_filtradas:
         try:
             dados = json.loads(u.checklist_status) if u.checklist_status else {}
@@ -366,9 +304,7 @@ def index():
         except:
             progresso = 0
         
-        # Verifica aprovação financeira
-        aprovacao_financeira = dados.get('Aprovação Financeira', 'pendente') if 'dados' in locals() else 'pendente'
-        
+        aprovacao_financeira = dados.get('Aprovação Financeira', 'pendente') if dados else 'pendente'
         status_categorias = calcular_status_categorias(u.checklist_status, CATEGORIAS_REQUISITOS)
         atrasados = verificar_atrasados(u.checklist_status)
         
@@ -378,12 +314,9 @@ def index():
             'status_categorias': status_categorias,
             'atrasados': atrasados,
             'qtd_atrasados': len(atrasados),
-            'aprovacao_financeira': aprovacao_financeira  # ← NOVO
+            'aprovacao_financeira': aprovacao_financeira
         })
-
-        
     
-    # Coleta todas as UFs e Tipos únicos para os filtros
     todas_ufs = sorted(set(u.uf for u in Unidade.query.all()))
     todos_tipos = sorted(set(u.tipo for u in Unidade.query.all()))
     todos_prazos = classificar_prazos(unidades_filtradas, CATEGORIAS_REQUISITOS)
@@ -421,74 +354,64 @@ def gerenciar(id):
     unidade = Unidade.query.get_or_404(id)
     
     if request.method == 'POST':
-        # Verifica se é apenas atualização de status
         apenas_status = request.form.get('apenas_status', '')
         
         if apenas_status == 'sim':
-            # Só atualiza o status, não mexe no checklist
             unidade.status_unidade = request.form.get('status_unidade', unidade.status_unidade)
             db.session.commit()
             return redirect(url_for('gerenciar', id=id))
         
-        # Atualização completa do checklist
         unidade.status_unidade = request.form.get('status_unidade', unidade.status_unidade)
-        
         dados_form = request.form.to_dict()
         status_atualizado = {}
         
+        # ✅ CORREÇÃO: Loop com indentação correta
         for item_config in sum(CATEGORIAS_REQUISITOS.values(), []):
             item_nome = item_config['nome']
             item_id = gerar_id_seguro(item_nome)
             
-            # Dentro do loop que processa cada item:
-
-        if item_config['tipo'] == 'checkbox':
-            valor = dados_form.get(f'req_{item_id}', '')
-            conclusao = dados_form.get(f'conclusao_{item_id}', '')
-            previsao = dados_form.get(f'previsao_{item_id}', '')
-            obs = dados_form.get(f'obs_{item_id}', '')  # ← NOVO
-            
-            status_atualizado[item_nome] = {
-                'concluido': (valor == 'on'),
-                'previsao': previsao,
-                'conclusao': conclusao,
-                'obs': obs if obs else None  # Salva só se tiver texto
-            }
-
-        elif item_config['tipo'] == 'approval':
-            valor = dados_form.get(f'aprovacao_{item_id}', 'pendente')
-            obs = dados_form.get(f'obs_{item_id}', '')  # ← NOVO
-            
-            status_atualizado[item_nome] = valor
-            if obs:
-                status_atualizado[f'obs_{item_nome}'] = obs
-
-        else:  # campo de dados
-            valor = dados_form.get(f'dado_{item_id}', '')
-            obs = dados_form.get(f'obs_{item_id}', '')  # ← NOVO
-            
-            if item_config['campo'] == 'email' and valor:
-                padrao_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-                if not re.match(padrao_email, valor):
-                    valor = ''
-            
-            status_atualizado[item_nome] = valor
-            if obs:
-                status_atualizado[f'obs_{item_nome}'] = obs
+            if item_config['tipo'] == 'checkbox':
+                valor = dados_form.get(f'req_{item_id}', '')
+                conclusao = dados_form.get(f'conclusao_{item_id}', '')
+                previsao = dados_form.get(f'previsao_{item_id}', '')
+                obs = dados_form.get(f'obs_{item_id}', '')
+                
+                status_atualizado[item_nome] = {
+                    'concluido': (valor == 'on'),
+                    'previsao': previsao,
+                    'conclusao': conclusao,
+                    'obs': obs if obs else None
+                }
+            elif item_config['tipo'] == 'approval':
+                valor = dados_form.get(f'aprovacao_{item_id}', 'pendente')
+                obs = dados_form.get(f'obs_{item_id}', '')
+                status_atualizado[item_nome] = valor
+                if obs:
+                    status_atualizado[f'obs_{item_nome}'] = obs
+            else:
+                valor = dados_form.get(f'dado_{item_id}', '')
+                obs = dados_form.get(f'obs_{item_id}', '')
+                if item_config['campo'] == 'email' and valor:
+                    padrao_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                    if not re.match(padrao_email, valor):
+                        valor = ''
+                status_atualizado[item_nome] = valor
+                if obs:
+                    status_atualizado[f'obs_{item_nome}'] = obs
         
         unidade.checklist_status = json.dumps(status_atualizado, ensure_ascii=False)
-        db.session.commit()
+        db.session.commit()  # ✅ ESSENCIAL
         return redirect(url_for('index'))
-
+    
     status_salvo = {}
     if unidade.checklist_status and unidade.checklist_status != "{}":
         try:
             status_salvo = json.loads(unidade.checklist_status)
         except:
             status_salvo = {}
-
+    
     atrasados = verificar_atrasados(unidade.checklist_status)
-
+    
     return render_template('checklist.html', 
                            unidade=unidade, 
                            categorias=CATEGORIAS_REQUISITOS, 
@@ -501,14 +424,11 @@ def gerenciar(id):
 @app.route('/dashboard')
 def dashboard():
     unidades = Unidade.query.all()
-    
-    # Dados para os gráficos
     total = len(unidades)
     abertas = sum(1 for u in unidades if u.status_unidade == 'aberta')
     em_processo = sum(1 for u in unidades if u.status_unidade in ['processo', 'pronta'])
     fechadas = sum(1 for u in unidades if u.status_unidade == 'fechada')
     
-    # Progresso médio
     progressos = []
     for u in unidades:
         try:
@@ -530,25 +450,18 @@ def dashboard():
             progressos.append(0)
     
     progresso_medio = sum(progressos) / len(progressos) if progressos else 0
-    
-    # Unidades por UF
     ufs = Counter(u.uf for u in unidades)
-    
-    # Unidades por Tipo
     tipos = Counter(u.tipo for u in unidades)
     
-    # Atrasos por categoria
     atrasos_por_categoria = {cat: 0 for cat in CATEGORIAS_REQUISITOS.keys()}
     for u in unidades:
         atrasados = verificar_atrasados(u.checklist_status)
         for item_atrasado in atrasados:
-            # Encontra a categoria do item
             for cat, itens in CATEGORIAS_REQUISITOS.items():
                 for item_config in itens:
                     if item_config['nome'] == item_atrasado['nome']:
                         atrasos_por_categoria[cat] += 1
     
-    # Próximos vencimentos (próximos 7 dias)
     hoje = date.today()
     proximos_vencimentos = []
     for u in unidades:
