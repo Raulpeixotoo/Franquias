@@ -7,8 +7,11 @@ from datetime import datetime, date
 from collections import Counter
 from datetime import datetime
 
+basedir = os.path.abspath(os.path.dirname(__file__))
 
-app = Flask(__name__)
+app = Flask(__name__, 
+            template_folder=os.path.join(basedir, 'templates'),
+            static_folder=os.path.join(basedir, 'static'))
 
 # Configuração do Banco de Dados
 
