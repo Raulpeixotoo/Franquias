@@ -14,7 +14,6 @@ app = Flask(
 )
 
 # Configuração do Banco de Dados
-# Configuração do Banco de Dados
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
@@ -29,8 +28,8 @@ if database_url:
         'pool_pre_ping': True,
         'pool_recycle': 300,
         'connect_args': {
-            'connect_timeout': 10,
-            'server_settings': {'application_name': 'franquias_app'}
+            'connect_timeout': 10
+            # 'server_settings' removido!
         }
     }
 
@@ -535,4 +534,5 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
 
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
