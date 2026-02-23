@@ -62,34 +62,72 @@ CATEGORIAS_REQUISITOS = {
         {"nome": "Telefone do Candidato", "tipo": "field", "campo": "tel"}
     ],
     "📄 Documentos": [
-        {"nome": "Contrato Social Assinado", "tipo": "checkbox"},
-        {"nome": "Alvará de Funcionamento", "tipo": "checkbox"},
-        {"nome": "Licença da Vigilância Sanitária", "tipo": "checkbox"},
-        {"nome": "Registro na Prefeitura", "tipo": "checkbox"}
+        {"nome": "Cnpj", "tipo": "checkbox"},
+        {"nome": "Contrato Social", "tipo": "checkbox"},
+        {"nome": "I.M.", "tipo": "checkbox"},
+        {"nome": "I.E.", "tipo": "checkbox"},
+        {"nome": "Sócios RG", "tipo": "checkbox"},
+        {"nome": "Sócios CPF", "tipo": "checkbox"},
+        {"nome": "Sócios RG", "tipo": "checkbox"},
+        {"nome": "sócios comprov. Residencia", "tipo": "checkbox"},
+        {"nome": "Fiador RG", "tipo": "checkbox"},
+        {"nome": "Fiador CPF", "tipo": "checkbox"},
+        {"nome": "Fiador comprov. Residencia", "tipo": "checkbox"},
+        {"nome": "Escritura Im´vvel", "tipo": "checkbox"},
+        {"nome": "Dados Bancários", "tipo": "checkbox"},
+        {"nome": "Imóvel Franquia", "tipo": "checkbox"},
+        {"nome": "MAE (Manual Assinatura Eletronica)", "tipo": "checkbox"}
     ],
     "💰 Financeiro": [
         {"nome": "Data Solicitação", "tipo": "checkbox"},
+        {"nome": "Pedido Ativação Financeiro", "tipo": "checkbox"},
+        {"nome": "Confirma Ativação Financeiro", "tipo": "checkbox"},
         {"nome": "Aprovação Financeira", "tipo": "approval"}
+        
     ],
     "💻 TI": [
-        {"nome": "Internet Contratada e Ativa", "tipo": "checkbox"},
-        {"nome": "Computadores Configurados", "tipo": "checkbox"},
-        {"nome": "Impressoras Instaladas", "tipo": "checkbox"},
-        {"nome": "Sistema de PDV Logado", "tipo": "checkbox"},
-        {"nome": "Wi-Fi para Clientes Configurado", "tipo": "checkbox"}
+        {"nome": "E-mail Oficial", "tipo": "checkbox"},
+        {"nome": "Ponto da Unidade", "tipo": "checkbox"},
+        {"nome": "Código Etiqueta Teca", "tipo": "checkbox"},
+        {"nome": "Solicitação do email oficial", "tipo": "checkbox"},
+        {"nome": "Retormo email oficial ", "tipo": "checkbox"},
+        {"nome": "N° do Contrato ", "tipo": "checkbox"},
+        {"nome": "Subir Projuris", "tipo": "checkbox"},
+        {"nome": "Assinado Projuris", "tipo": "checkbox"},
+        {"nome": "Envio E-mail Oficial", "tipo": "checkbox"}
     ],
-    "🏗️ Infraestrutura": [
-        {"nome": "Fachada Instalada", "tipo": "checkbox"},
-        {"nome": "Iluminação Funcionando", "tipo": "checkbox"},
-        {"nome": "Ar Condicionado Instalado", "tipo": "checkbox"},
-        {"nome": "Limpeza Pós-Obra Realizada", "tipo": "checkbox"}
+    "🏗️ Inetum": [
+        {"nome": "Solicitação SALESFORCE", "tipo": "checkbox"},
+        {"nome": "Solicitação FractionWeb", "tipo": "checkbox"}
     ],
-    "👥 Equipe": [
-        {"nome": "Uniformes Entregues", "tipo": "checkbox"},
-        {"nome": "Treinamento Operacional Concluído", "tipo": "checkbox"},
-        {"nome": "Escala de Trabalho Definida", "tipo": "checkbox"}
+    "🚚 Rodobens": [
+        {"nome": "Pedido GRIS", "tipo": "checkbox"},
+        {"nome": "Feedback GRIS", "tipo": "checkbox"}
+    ],
+    "Marketing": [
+        {"nome": "Pedido GRIS", "tipo": "checkbox"},
+        {"nome": "Feedback GRIS", "tipo": "checkbox"}
+    ],
+    "📝 Assinatura 4Desingn": [
+        {"nome": "Uniformes Entregues","tipo": "checkbox"},
+        {"nome": "Treinamento Operacional Concluído","tipo": "checkbox"},
+        {"nome": "Escala de Trabalho Definida","tipo": "checkbox"},
+        {"nome": "Envio da PAF","tipo": "checkbox"},
+        {"nome": "Assinatura PAF","tipo": "checkbox"},
+        {"nome": "Envio da CCF","tipo": "checkbox"},
+        {"nome": "Assinatura CCF","tipo": "checkbox"},
+        {"nome": "Envio da COF","tipo": "checkbox"},
+        {"nome": "Assinatura COF","tipo": "checkbox"}
+    ],
+    "Outros": [
+        {"nome": "e-mail equips", "tipo": "checkbox"},
+        {"nome": "Marketing - Proj. Arquitetura", "tipo": "checkbox"},
+        {"nome": "Pagamento Adesão", "tipo": "checkbox"},
+        {"nome": "2° Meeting", "tipo": "checkbox"},
+        {"nome": "Treinamento", "tipo": "checkbox"},
+        {"nome": "Jira Alt CEPS e OC's", "tipo": "checkbox"},
+        {"nome": "Central Lat&Long", "tipo": "checkbox"}
     ]
-
 }
 
 # --- FUNÇÃO PARA GERAR ID SEGURO ---
@@ -402,34 +440,41 @@ def gerenciar(id):
             item_nome = item_config['nome']
             item_id = gerar_id_seguro(item_nome)
             
-            if item_config['tipo'] == 'checkbox':
-                valor = dados_form.get(f'req_{item_id}', '')
-                conclusao = dados_form.get(f'conclusao_{item_id}', '')
-                previsao = dados_form.get(f'previsao_{item_id}', '')
-                
-                status_atualizado[item_nome] = {
-                    'concluido': (valor == 'on'),
-                    'previsao': previsao,
-                    'conclusao': conclusao
-                }
+            # Dentro do loop que processa cada item:
+
+        if item_config['tipo'] == 'checkbox':
+            valor = dados_form.get(f'req_{item_id}', '')
+            conclusao = dados_form.get(f'conclusao_{item_id}', '')
+            previsao = dados_form.get(f'previsao_{item_id}', '')
+            obs = dados_form.get(f'obs_{item_id}', '')  # ← NOVO
             
-            elif item_config['tipo'] == 'approval':
-                valor = dados_form.get(f'aprovacao_{item_id}', 'pendente')
-                obs = dados_form.get(f'obs_{item_id}', '')
-                
-                status_atualizado[item_nome] = valor
-                if obs:
-                    status_atualizado[f'obs_{item_nome}'] = obs
+            status_atualizado[item_nome] = {
+                'concluido': (valor == 'on'),
+                'previsao': previsao,
+                'conclusao': conclusao,
+                'obs': obs if obs else None  # Salva só se tiver texto
+            }
+
+        elif item_config['tipo'] == 'approval':
+            valor = dados_form.get(f'aprovacao_{item_id}', 'pendente')
+            obs = dados_form.get(f'obs_{item_id}', '')  # ← NOVO
             
-            else:  # campo de dados
-                valor = dados_form.get(f'dado_{item_id}', '')
-                
-                if item_config['campo'] == 'email' and valor:
-                    padrao_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-                    if not re.match(padrao_email, valor):
-                        valor = ''
-                
-                status_atualizado[item_nome] = valor
+            status_atualizado[item_nome] = valor
+            if obs:
+                status_atualizado[f'obs_{item_nome}'] = obs
+
+        else:  # campo de dados
+            valor = dados_form.get(f'dado_{item_id}', '')
+            obs = dados_form.get(f'obs_{item_id}', '')  # ← NOVO
+            
+            if item_config['campo'] == 'email' and valor:
+                padrao_email = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+                if not re.match(padrao_email, valor):
+                    valor = ''
+            
+            status_atualizado[item_nome] = valor
+            if obs:
+                status_atualizado[f'obs_{item_nome}'] = obs
         
         unidade.checklist_status = json.dumps(status_atualizado, ensure_ascii=False)
         db.session.commit()
