@@ -351,7 +351,7 @@
                                         {% set concluido = item_valor.get('concluido', False) %}
                                         {% set previsao = item_valor.get('previsao', '') %}
                                         {% set conclusao = item_valor.get('conclusao', '') %}
-                                        {% set obs = item_valor.get('obs', '') %}
+                                        {% set obs = item_valor.get('obs', '') or '' %}
                                     {% else %}
                                         {% set concluido = False %}
                                         {% set previsao = '' %}
@@ -405,7 +405,7 @@
                                                 <button type="button" 
                                                         class="btn-toggle-obs {% if tem_obs %}active{% endif %}" 
                                                         onclick="toggleObservacao('{{ item_id }}', this)">
-                                                    {% if tem_obs %}💬 Com observação{% else %}💬 Adicionar Observação{% endif %}
+                                                    {% if tem_obs %}💬 Ocultar Observação{% else %}💬 Adicionar Observação{% endif %}
                                                 </button>
                                                 
                                                 <!-- Campo de Observação (oculto por padrão) -->
@@ -425,7 +425,7 @@
                                 
                                 {% elif item_tipo == 'approval' %}
                                     {% set item_valor = status_salvo.get(item_nome, 'pendente') %}
-                                    {% set obs = status_salvo.get('obs_' + item_nome, '') %}
+                                    {% set obs = status_salvo.get('obs_' + item_nome, '') or '' %}
                                     {% set tem_obs = (obs != '') %}
                                     
                                     <div class="list-group-item {% if tem_obs %}tem-observacao{% endif %}" id="item_{{ item_id }}">
@@ -461,7 +461,7 @@
                                                 <button type="button" 
                                                         class="btn-toggle-obs {% if tem_obs %}active{% endif %}" 
                                                         onclick="toggleObservacao('{{ item_id }}', this)">
-                                                    {% if tem_obs %}💬 Com observação{% else %}💬 Adicionar Observação{% endif %}
+                                                    {% if tem_obs %}💬 Ocultar Observação{% else %}💬 Adicionar Observação{% endif %}
                                                 </button>
                                                 
                                                 <!-- Campo de Observação (oculto por padrão) -->
@@ -484,7 +484,7 @@
                                     {% if item_valor is mapping %}
                                         {% set item_valor = '' %}
                                     {% endif %}
-                                    {% set obs = status_salvo.get('obs_' + item_nome, '') %}
+                                    {% set obs = status_salvo.get('obs_' + item_nome, '') or '' %}
                                     {% set tem_obs = (obs != '') %}
                                     
                                     <div class="list-group-item {% if tem_obs %}tem-observacao{% endif %}" id="item_{{ item_id }}">
@@ -533,7 +533,7 @@
                                                 <button type="button" 
                                                         class="btn-toggle-obs {% if tem_obs %}active{% endif %}" 
                                                         onclick="toggleObservacao('{{ item_id }}', this)">
-                                                    {% if tem_obs %}💬 Com observação{% else %}💬 Adicionar Observação{% endif %}
+                                                    {% if tem_obs %}💬 Ocultar Observação{% else %}💬 Adicionar Observação{% endif %}
                                                 </button>
                                                 
                                                 <!-- Campo de Observação (oculto por padrão) -->
