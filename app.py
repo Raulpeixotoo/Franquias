@@ -1,10 +1,12 @@
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 import os
 import json
 import re
 from datetime import datetime, date
 from collections import Counter
+
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
@@ -16,9 +18,10 @@ app = Flask(
 # Configuração do Banco de Dados
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
+    # Ambiente de produção (Render)
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print("✅ Usando PostgreSQL")
+    print("✅ Usando PostgreSQL (Produção)")
     
     # Configuração para asyncpg se necessário
     if 'postgresql' in database_url and 'asyncpg' not in database_url:
@@ -29,14 +32,26 @@ if database_url:
         'pool_recycle': 300,
         'connect_args': {
             'connect_timeout': 10
-            # 'server_settings' removido!
         }
     }
+else:
+    # Ambiente de desenvolvimento (local)
+    db_path = os.path.join(basedir, 'instance', 'checklist.db')
+    # Garante que o diretório instance existe
+    os.makedirs(os.path.join(basedir, 'instance'), exist_ok=True)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,  # SQLite também suporta
+    }
+    print(f"✅ Usando SQLite (Desenvolvimento Local): {db_path}")
 
+# Configurações comuns
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-desenvolvimento-local-temporaria')
 
-db = SQLAlchemy()
-db.init_app(app)
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
 
 
 TIPOS_UNIDADE = {
@@ -534,5 +549,3 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
 
     app.run(host='0.0.0.0', port=port, debug=False)
-
-
