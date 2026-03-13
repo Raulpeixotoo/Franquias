@@ -1,29 +1,50 @@
-from flask import Flask, render_template, request, redirect, url_for
+import os
+from flask import Flask, render_template, request, redirect, url_for, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-import os
 import json
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from collections import Counter
+from flask_mail import Mail, Message
+import threading
+import traceback
+from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv
+
+
 
 
 basedir = os.path.abspath(os.path.dirname(__file__))
+
+load_dotenv(os.path.join(basedir, ".env"))
+print("MAIL_USERNAME:", os.getenv("MAIL_USERNAME"))
+print("MAIL_PASSWORD:", os.getenv("MAIL_PASSWORD"))
+
+
 app = Flask(
     __name__,
     template_folder=os.path.join(basedir, 'templates'),
     static_folder=os.path.join(basedir, 'static') if os.path.exists(os.path.join(basedir, 'static')) else None
 )
 
+
+@app.context_processor
+def utility_processor():
+    return dict(
+        now=datetime.now,
+        email_franqueado=os.environ.get('EMAIL_FRANQUEADO', 'Não configurado'),
+        email_time=os.environ.get('EMAIL_TIME', 'Não configurado')
+    )
+
+
 # Configuração do Banco de Dados
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Ambiente de produção (Render)
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     print("✅ Usando PostgreSQL (Produção)")
     
-    # Configuração para asyncpg se necessário
     if 'postgresql' in database_url and 'asyncpg' not in database_url:
         database_url = database_url.replace('postgresql://', 'postgresql+asyncpg://')
     
@@ -42,7 +63,7 @@ else:
     
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,  # SQLite também suporta
+        'pool_pre_ping': True,
     }
     print(f"✅ Usando SQLite (Desenvolvimento Local): {db_path}")
 
@@ -50,9 +71,21 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-desenvolvimento-local-temporaria')
 
+# Configuração do Mail - CORRIGIDA
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'True').lower() == 'true'
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', app.config['MAIL_USERNAME'])
+app.config['MAIL_MAX_EMAILS'] = None
+
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+mail = Mail(app)
 
+# Cache para evitar emails duplicados
+ultimo_envio = {}
 
 TIPOS_UNIDADE = {
     "CO": "Centro de Operações",
@@ -161,6 +194,24 @@ class Unidade(db.Model):
     tipo = db.Column(db.String(10), nullable=False)
     status_unidade = db.Column(db.String(20), default="processo")
     checklist_status = db.Column(db.Text, default="{}")
+    
+
+class LogEtapa(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    unidade_id = db.Column(db.Integer)
+    etapa = db.Column(db.String(200))
+    acao = db.Column(db.String(50))
+    observacao = db.Column(db.Text)
+    data = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+
+    @property
+    def status(self):
+        try:
+            return json.loads(self.checklist_status) if self.checklist_status else {}
+        except:
+            return {}
 
 def verificar_atrasados(checklist_json):
     if not checklist_json or checklist_json == "{}":
@@ -280,6 +331,168 @@ def classificar_prazos(unidades, categorias):
     todos_prazos.sort(key=lambda x: (x['urgencia'] != 'atrasado', x['previsao']))
     return todos_prazos
 
+# ==================== FUNÇÕES DE EMAIL CORRIGIDAS ====================
+
+def enviar_email_async(app_context, msg):
+    """Envia email em background para não travar a aplicação"""
+    try:
+        with app_context:
+            mail.send(msg)
+            print(f"✅ Email enviado com sucesso para: {', '.join(msg.recipients)}")
+            return True
+    except Exception as e:
+        print(f"❌ ERRO DETALHADO AO ENVIAR EMAIL:")
+        traceback.print_exc()
+        print(f"Configuração atual: Servidor={app.config['MAIL_SERVER']}, Porta={app.config['MAIL_PORT']}, TLS={app.config['MAIL_USE_TLS']}")
+        return False
+
+def enviar_email(destinatarios, assunto, corpo_html, corpo_text=None):
+    """Função principal para enviar emails"""
+    try:
+        # Validar configuração
+        if not app.config['MAIL_USERNAME'] or not app.config['MAIL_PASSWORD']:
+            print("❌ MAIL_USERNAME ou MAIL_PASSWORD não configurados")
+            return False, "Configuração de email incompleta"
+        
+        # Garantir que destinatários seja uma lista
+        if isinstance(destinatarios, str):
+            destinatarios = [d.strip() for d in destinatarios.split(',') if d.strip()]
+        
+        # Validar emails
+        emails_validos = []
+        for email in destinatarios:
+            if re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                emails_validos.append(email)
+            else:
+                print(f"Email inválido ignorado: {email}")
+        
+        if not emails_validos:
+            print("Nenhum email válido para enviar")
+            return False, "Nenhum email válido"
+        
+        msg = Message(
+            subject=assunto,
+            recipients=emails_validos,
+            html=corpo_html,
+            body=corpo_text or "Por favor, visualize este email em um cliente HTML."
+        )
+
+        
+        # Envia em background
+        app_context = app.app_context()
+        thread = threading.Thread(target=enviar_email_async, args=(app_context, msg))
+        thread.daemon = True
+        thread.start()
+        
+        return True, f"Enviando para: {', '.join(emails_validos)}"
+        
+    except Exception as e:
+        print(f"Erro ao preparar email: {str(e)}")
+        traceback.print_exc()
+        return False, str(e)
+
+def registrar_log(unidade_id, etapa, status, observacao=None):
+
+    log = LogEtapa(
+        unidade_id=unidade_id,
+        etapa=etapa,
+        acao=status,
+        observacao=observacao
+    )
+
+
+
+    db.session.add(log)
+    db.session.commit()
+
+def registrar_log(unidade_id, etapa, acao, observacao=None):
+
+    log = LogEtapa(
+        unidade_id=unidade_id,
+        etapa=etapa,
+        acao=acao,
+        observacao=observacao
+    )
+
+    db.session.add(log)
+    db.session.commit()
+
+
+def verificar_prazos_e_notificar(unidade, status_salvo):
+    """Verifica itens próximos ao vencimento e envia notificações"""
+    hoje = datetime.now().date()
+    alertas = []
+    
+    for item_nome, item_valor in status_salvo.items():
+        if isinstance(item_valor, dict):
+            previsao = item_valor.get('previsao', '')
+            concluido = item_valor.get('concluido', False)
+            
+            if previsao and not concluido:
+                try:
+                    data_previsao = datetime.strptime(previsao, '%Y-%m-%d').date()
+                    dias_para_vencer = (data_previsao - hoje).days
+                    
+                    # Alerta se vencer hoje ou amanhã
+                    if 0 <= dias_para_vencer <= 1:
+                        alertas.append({
+                            'item': item_nome,
+                            'dias': dias_para_vencer,
+                            'previsao': previsao,
+                            'status': 'vencimento'
+                        })
+                    # Alerta se já venceu
+                    elif dias_para_vencer < 0:
+                        alertas.append({
+                            'item': item_nome,
+                            'dias': abs(dias_para_vencer),
+                            'previsao': previsao,
+                            'status': 'vencido'
+                        })
+                except:
+                    pass
+    
+    return alertas
+
+def notificar_aprovacoes_pendentes(unidade, status_salvo):
+    """Verifica aprovações pendentes e notifica a equipe"""
+    pendentes = []
+    
+    for item_nome, item_valor in status_salvo.items():
+        if 'aprovacao_' in item_nome or item_valor == 'pendente':
+            pendentes.append(item_nome.replace('aprovacao_', ''))
+    
+    return pendentes
+
+def verificar_todas_unidades():
+    """Verifica todas as unidades e envia notificações"""
+    with app.app_context():
+        unidades = Unidade.query.all()
+        hoje = date.today()
+        
+        for unidade in unidades:
+            status_salvo = unidade.status
+            alertas = verificar_prazos_e_notificar(unidade, status_salvo)
+            
+            # Envia se houver alertas (evita spam - a cada 24h)
+            chave_cache = f"unidade_{unidade.id}_{hoje}"
+            if alertas and ultimo_envio.get(chave_cache) != hoje:
+                email_franqueado = os.environ.get('EMAIL_FRANQUEADO')
+                if email_franqueado:
+                    html = render_template('emails/alerta_prazo.html', 
+                                         unidade=unidade, 
+                                         alertas=alertas)
+                    enviar_email(email_franqueado, f"🔔 Resumo de Prazos - {unidade.nome}", html)
+                    ultimo_envio[chave_cache] = hoje
+
+# Inicia o scheduler (apenas se não estiver no modo debug ou em produção)
+if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(func=verificar_todas_unidades, trigger="interval", hours=24)
+    scheduler.start()
+
+# ==================== ROTAS ====================
+
 @app.route('/')
 def index():
     filtro_status = request.args.get('status', '')
@@ -369,6 +582,14 @@ def adicionar():
         nova_unidade = Unidade(nome=nome, cidade=cidade, uf=uf, tipo=tipo, status_unidade=status)
         db.session.add(nova_unidade)
         db.session.commit()
+
+        registrar_log(
+            nova_unidade.id,
+            "Unidade criada",
+            "criado",
+            "Nova unidade adicionada ao sistema"
+        )
+
         return redirect(url_for('index'))
     return render_template('adicionar.html', tipos_unidade=TIPOS_UNIDADE, status_unidade_opts=STATUS_UNIDADE)
 
@@ -423,6 +644,14 @@ def gerenciar(id):
         
         unidade.checklist_status = json.dumps(status_atualizado, ensure_ascii=False)
         db.session.commit()
+
+        registrar_log(
+            unidade.id,
+            "Checklist atualizado",
+            "update",
+            "Checklist da unidade foi atualizado"
+        )
+
         return redirect(url_for('index'))
     
     status_salvo = {}
@@ -441,7 +670,9 @@ def gerenciar(id):
                            status_unidade_opts=STATUS_UNIDADE,
                            atrasados=atrasados,
                            hoje=date.today().isoformat(),
-                           gerar_id_seguro=gerar_id_seguro)
+                           gerar_id_seguro=gerar_id_seguro,
+                           email_franqueado=os.environ.get('EMAIL_FRANQUEADO', 'Não configurado'),
+                           email_time=os.environ.get('EMAIL_TIME', 'Não configurado'))
 
 @app.route('/dashboard')
 def dashboard():
@@ -535,8 +766,361 @@ def encontrar_nome_por_id(id_item):
                 return item_config['nome']
     return None
 
+@app.route('/notificar/<int:unidade_id>', methods=['POST'])
+def notificar_unidade(unidade_id):
+    unidade = Unidade.query.get_or_404(unidade_id)
+    status_salvo = unidade.status
+    
+    # Pega os dados do POST
+    data = request.get_json()
+    if not data:
+        return {'success': False, 'message': 'Dados não recebidos'}
+    
+    tipo = data.get('tipo', '')
+    emails_manuais = data.get('emails', '')
+    
+    # Se for apenas preview, retorna contagem
+    if tipo == 'preview':
+        alertas = verificar_prazos_e_notificar(unidade, status_salvo)
+        pendentes = notificar_aprovacoes_pendentes(unidade, status_salvo)
+        return {
+            'success': True,
+            'alertas': len(alertas),
+            'pendentes': len(pendentes)
+        }
+    
+    # Lista de destinatários
+    destinatarios = []
+    
+    if emails_manuais:
+        destinatarios = [email.strip() for email in emails_manuais.split(',') if email.strip()]
+    else:
+        if tipo in ['franqueado', 'todos']:
+            email_franqueado = os.environ.get('EMAIL_FRANQUEADO')
+            if email_franqueado:
+                destinatarios.append(email_franqueado)
+        
+        if tipo in ['time', 'todos']:
+            email_time = os.environ.get('EMAIL_TIME')
+            if email_time:
+                destinatarios.append(email_time)
+    
+    if not destinatarios:
+        return {'success': False, 'message': 'Nenhum destinatário configurado'}
+    
+    # Verifica prazos e aprovações
+    alertas = []
+    pendentes = []
+    hoje = datetime.now().date()
+    
+    for item_nome, item_valor in status_salvo.items():
+        if isinstance(item_valor, dict):
+            previsao = item_valor.get('previsao', '')
+            concluido = item_valor.get('concluido', False)
+            
+            if previsao and not concluido:
+                try:
+                    data_previsao = datetime.strptime(previsao, '%Y-%m-%d').date()
+                    dias_para_vencer = (data_previsao - hoje).days
+                    
+                    if dias_para_vencer < 0:
+                        alertas.append({
+                            'item': item_nome,
+                            'dias': abs(dias_para_vencer),
+                            'previsao': previsao,
+                            'status': 'vencido',
+                            'tipo': 'prazo'
+                        })
+                    elif dias_para_vencer <= 2:
+                        alertas.append({
+                            'item': item_nome,
+                            'dias': dias_para_vencer,
+                            'previsao': previsao,
+                            'status': 'vencimento',
+                            'tipo': 'prazo'
+                        })
+                except:
+                    pass
+        
+        if 'Aprovação' in item_nome or 'aprovacao' in item_nome.lower():
+            if item_valor == 'pendente':
+                pendentes.append({
+                    'item': item_nome,
+                    'tipo': 'aprovacao'
+                })
+    
+    if not alertas and not pendentes:
+        return {'success': False, 'message': 'Nenhum item para notificar'}
+    
+    # Construir HTML dos itens
+    prazos_html = ""
+    for alerta in alertas:
+        classe = "vencido" if alerta['status'] == 'vencido' else "alerta"
+        icone = "⛔" if alerta['status'] == 'vencido' else "⚠️"
+        texto_dias = f"VENCIDO há {alerta['dias']} dias" if alerta['status'] == 'vencido' else f"Vence em {alerta['dias']} dias"
+        cor = "#dc3545" if alerta['status'] == 'vencido' else "#ffc107"
+        
+        prazos_html += f"""
+        <div style="background-color: #f8f9fa; border-left: 4px solid {cor}; padding: 15px; margin: 10px 0; border-radius: 4px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">{icone}</span>
+                <div>
+                    <strong style="font-size: 16px;">{alerta['item']}</strong><br>
+                    <span style="color: {cor}; font-weight: bold;">{texto_dias}</span><br>
+                    <small style="color: #6c757d;">📅 Previsão: {alerta['previsao']}</small>
+                </div>
+            </div>
+        </div>
+        """
+    
+    aprovacoes_html = ""
+    for item in pendentes:
+        aprovacoes_html += f"""
+        <div style="background-color: #e2f3ff; border-left: 4px solid #0d6efd; padding: 15px; margin: 10px 0; border-radius: 4px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 20px;">⏳</span>
+                <div>
+                    <strong style="font-size: 16px;">{item['item']}</strong><br>
+                    <span style="color: #0d6efd;">Pendente de Aprovação</span>
+                </div>
+            </div>
+        </div>
+        """
+    
+    data_atual = datetime.now().strftime('%d/%m/%Y %H:%M')
+    
+    # Montar corpo do email (sem Jinja2, apenas Python)
+    corpo_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ 
+                background: linear-gradient(135deg, #dc0032 0%, #b8002a 100%);
+                color: white; 
+                padding: 30px; 
+                border-radius: 10px 10px 0 0;
+                text-align: center;
+            }}
+            .header h1 {{ margin: 0; font-size: 28px; }}
+            .header p {{ margin: 10px 0 0; opacity: 0.9; }}
+            .content {{ background: white; padding: 30px; border-radius: 0 0 10px 10px; }}
+            .info-unidade {{ 
+                background: #f8f9fa; 
+                padding: 20px; 
+                border-radius: 8px; 
+                margin-bottom: 25px;
+                border: 1px solid #dee2e6;
+            }}
+            .info-unidade h3 {{ margin: 0 0 15px; color: #dc0032; }}
+            .info-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }}
+            .info-item {{ margin-bottom: 10px; }}
+            .info-label {{ font-weight: bold; color: #6c757d; font-size: 14px; }}
+            .info-value {{ font-size: 16px; }}
+            .badge {{
+                display: inline-block;
+                padding: 5px 10px;
+                border-radius: 20px;
+                font-size: 12px;
+                font-weight: bold;
+                text-transform: uppercase;
+            }}
+            .badge-processo {{ background: #ffc107; color: #000; }}
+            .badge-pronta {{ background: #17a2b8; color: white; }}
+            .badge-aberta {{ background: #28a745; color: white; }}
+            .badge-fechada {{ background: #6c757d; color: white; }}
+            .secao {{ margin-top: 30px; }}
+            .secao h4 {{ 
+                color: #dc0032; 
+                border-bottom: 2px solid #dc0032; 
+                padding-bottom: 10px;
+                margin-bottom: 20px;
+            }}
+            .botao {{
+                display: inline-block;
+                background: #dc0032;
+                color: white;
+                padding: 12px 30px;
+                text-decoration: none;
+                border-radius: 5px;
+                font-weight: bold;
+                margin-top: 25px;
+                text-align: center;
+            }}
+            .botao:hover {{ background: #b8002a; }}
+            .footer {{
+                margin-top: 30px;
+                padding-top: 20px;
+                border-top: 1px solid #dee2e6;
+                text-align: center;
+                color: #6c757d;
+                font-size: 12px;
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>📋 Checklist de Abertura</h1>
+                <p>Notificação Automática</p>
+            </div>
+            
+            <div class="content">
+                <div class="info-unidade">
+                    <h3>📍 {unidade.nome}</h3>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <div class="info-label">Cidade/UF</div>
+                            <div class="info-value">{unidade.cidade} - {unidade.uf}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Tipo</div>
+                            <div class="info-value">{TIPOS_UNIDADE.get(unidade.tipo, unidade.tipo)}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Status da Unidade</div>
+                            <div class="info-value">
+                                <span class="badge badge-{unidade.status_unidade}">
+                                    {STATUS_UNIDADE.get(unidade.status_unidade, {'label': unidade.status_unidade})['label']}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">Data/Hora</div>
+                            <div class="info-value">{data_atual}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                {f'<div class="secao"><h4>🔔 Prazos ({len(alertas)})</h4>{prazos_html}</div>' if alertas else ''}
+                
+                {f'<div class="secao"><h4>⏳ Aprovações Pendentes ({len(pendentes)})</h4>{aprovacoes_html}</div>' if pendentes else ''}
+                
+                <div style="text-align: center;">
+                    <a href="https://seudominio.com/gerenciar/{unidade.id}" class="botao">
+                        🔍 Acessar Checklist Completo
+                    </a>
+                </div>
+                
+                <div class="footer">
+                    <p>Este é um email automático do sistema de Checklist.</p>
+                    <p>© {datetime.now().year} - Todos os direitos reservados</p>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Definir assunto do email
+    if alertas and pendentes:
+        assunto = f"🔔 Prazos e Aprovações Pendentes - {unidade.nome}"
+    elif alertas:
+        assunto = f"🔔 {len(alertas)} Item(ns) com Prazo - {unidade.nome}"
+    elif pendentes:
+        assunto = f"⏳ {len(pendentes)} Aprovação(ões) Pendente(s) - {unidade.nome}"
+    else:
+        assunto = f"📋 Resumo do Checklist - {unidade.nome}"
+    
+    # Envia o email
+    success, message = enviar_email(destinatarios, assunto, corpo_html)
+    
+    return {
+        'success': success,
+        'message': message,
+        'alertas': len(alertas),
+        'pendentes': len(pendentes),
+        'destinatarios': destinatarios
+    }
+
+# ==================== TESTE DE EMAIL ====================
+
+@app.route('/testar-email')
+def testar_email():
+    """Rota para testar configuração de email"""
+    try:
+        destinatario = os.environ.get('MAIL_USERNAME')
+        if not destinatario:
+            return {
+                'success': False,
+                'message': 'MAIL_USERNAME não configurado'
+            }
+        
+        assunto = "🔧 Teste de Configuração de Email"
+        corpo = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; }}
+                .success {{ 
+                    background: #d4edda; 
+                    border: 1px solid #c3e6cb; 
+                    color: #155724; 
+                    padding: 20px; 
+                    border-radius: 5px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="success">
+                <h2>✅ Teste de Email - Checklist</h2>
+                <p>Se você está vendo esta mensagem, a configuração de email está funcionando corretamente!</p>
+                <p><strong>Data/Hora:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+                <p><strong>Servidor:</strong> {app.config['MAIL_SERVER']}</p>
+                <p><strong>Porta:</strong> {app.config['MAIL_PORT']}</p>
+                <p><strong>TLS:</strong> {app.config['MAIL_USE_TLS']}</p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        success, message = enviar_email(destinatario, assunto, corpo)
+        
+        if success:
+            return {'success': True, 'message': f'Email de teste enviado para {destinatario}'}
+        else:
+            return {'success': False, 'message': f'Falha ao enviar: {message}'}
+            
+    except Exception as e:
+        return {'success': False, 'message': f'Erro: {str(e)}'}
+
+# ==================== STATUS EMAIL ====================
+
+@app.route('/status-email')
+def status_email():
+    """Verifica configuração atual de email"""
+    config = {
+        'MAIL_SERVER': app.config['MAIL_SERVER'],
+        'MAIL_PORT': app.config['MAIL_PORT'],
+        'MAIL_USE_TLS': app.config['MAIL_USE_TLS'],
+        'MAIL_USERNAME': app.config['MAIL_USERNAME'],
+        'MAIL_DEFAULT_SENDER': app.config['MAIL_DEFAULT_SENDER'],
+        'EMAIL_FRANQUEADO': os.environ.get('EMAIL_FRANQUEADO', 'Não configurado'),
+        'EMAIL_TIME': os.environ.get('EMAIL_TIME', 'Não configurado'),
+        'MAIL_PASSWORD': '******' if app.config['MAIL_PASSWORD'] else 'Não configurado'
+    }
+    return {'success': True, 'config': config}
+
+
+@app.route("/logs/<int:unidade_id>")
+def ver_logs(unidade_id):
+
+    logs = LogEtapa.query.filter_by(unidade_id=unidade_id)\
+        .order_by(LogEtapa.data.desc()).all()
+
+    unidade = Unidade.query.get_or_404(unidade_id)
+
+    return render_template("logs.html", logs=logs, unidade=unidade)
+
+# ==================== INICIALIZAÇÃO ====================
+
 with app.app_context():
     db.create_all()
+    print("✅ Banco de dados inicializado")
 
 @app.context_processor
 def utility_processor():
@@ -544,8 +1128,14 @@ def utility_processor():
         return datetime.now()
     return dict(now=now)
 
-# ✅ CORREÇÃO: __name__ e __main__ com underscores
+
+# ==================== EXECUÇÃO ====================
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-
+    print(f"\n{'='*50}")
+    print(f"🚀 Servidor iniciado em: http://localhost:{port}")
+    print(f"📧 Status do Email: {app.config['MAIL_USERNAME']}")
+    print(f"{'='*50}\n")
+    
     app.run(host='0.0.0.0', port=port, debug=False)

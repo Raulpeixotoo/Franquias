@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .header { background: #dc0032; color: white; padding: 20px; }
+        .pendente { background: #e2f3ff; border-left: 4px solid #0d6efd; padding: 15px; margin: 10px 0; }
+        .botao { background: #dc0032; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>⏳ Aprovações Pendentes - {{ unidade.nome }}</h2>
+    </div>
+    {% for item in pendentes %}
+    <div class="pendente">
+        <strong>{{ item }}</strong><br>
+        <span>Aguardando aprovação</span>
+    </div>
+    {% endfor %}
+    <a href="https://seudominio.com/gerenciar/{{ unidade.id }}" class="botao">Revisar Aprovações</a>
+</body>
+</html>

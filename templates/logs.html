@@ -1,0 +1,19 @@
+<h2>Histórico da Unidade: {{ unidade.nome }}</h2>
+
+<table border="1" style="width:100%; border-collapse: collapse;">
+    <tr>
+        <th>Data</th>
+        <th>Etapa</th>
+        <th>Status</th>
+        <th>Observação</th>
+    </tr>
+
+    {% for log in logs %}
+    <tr>
+        <td>{{ log.data.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td>{{ log.etapa }}</td>
+        <td>{{ log.acao }}</td>
+        <td>{{ log.observacao }}</td>
+    </tr>
+    {% endfor %}
+</table>

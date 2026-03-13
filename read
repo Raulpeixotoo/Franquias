@@ -1,1 +1,3 @@
 pip install flask flask-sqlalchemy     precisa instalar isso e o python
+pip install flask-mail python-dotenv
+pip install apscheduler

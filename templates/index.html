@@ -379,6 +379,8 @@
             <!--<a href="/dashboard" class="btn btn-success me-2">📊 Dashboard</a> -->
             <a href="/adicionar" class="btn btn-primary">Nova Unidade</a>
         </div>
+
+
     
 
         <!-- CARDS PRINCIPAIS -->
@@ -656,14 +658,19 @@
                         class="btn btn-outline-primary w-100" style="box-shadow: none !important; outline: none !important;">
                             Gerenciar Unidade
                         </a>
-
+                        
+                        
                         <form action="/deletar/{{ info.unidade.id }}" method="POST" class="mt-2" 
-                              onsubmit="return confirm('⚠️ TEM CERTEZA?\n\nIsso apagará todos os dados da unidade {{ info.unidade.nome }} permanentemente!');">
-                            <button type="submit" class="btn btn-outline-danger w-100">
-                                Apagar Unidade
-                            </button>
+                        onsubmit="return confirm('⚠️ TEM CERTEZA?\n\nIsso apagará todos os dados da unidade {{ info.unidade.nome }} permanentemente!');">
+                        <button type="submit" class="btn btn-outline-danger w-100">
+                            Apagar Unidade
+                        </button>
                         </form>
-                    </div>
+                        <a href="{{ url_for('ver_logs', unidade_id=info.unidade.id) }}" 
+                        class="btn btn-outline-secondary w-100 mt-2">
+                        📜 Ver histórico
+                        </a>
+                </div>
                 </div>
             </div>
             {% endfor %}

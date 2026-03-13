@@ -140,19 +140,26 @@
             box-shadow: 0 0 0 3px rgba(220, 0, 50, 0.1);
         }
         
-        .btn-success {
-            background: var(--success);
+        /* Botão Salvar - COR VERMELHA #dc0032 */
+        .btn-primary-custom {
+            background: #dc0032;
             border: none;
             padding: 0.75rem 2rem;
             border-radius: 8px;
             font-weight: 600;
+            color: white;
             transition: all 0.3s ease;
         }
         
-        .btn-success:hover {
-            background: #2fb344;
+        .btn-primary-custom:hover {
+            background: #b8002a;
             transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(64, 192, 87, 0.3);
+            box-shadow: 0 4px 12px rgba(220, 0, 50, 0.3);
+            color: white;
+        }
+        
+        .btn-primary-custom:active {
+            transform: translateY(0);
         }
         
         .btn-outline-secondary {
@@ -234,7 +241,6 @@
         }
         
         .item-concluido {
-            text-decoration: line-through;
             color: var(--gray-600);
         }
         
@@ -281,6 +287,51 @@
         .tem-observacao {
             border-left: 3px solid var(--success) !important;
         }
+
+        /* Estilos do Modal */
+        .modal-header-custom {
+            background: #dc0032;
+            color: white;
+            border-bottom: none;
+        }
+        
+        .modal-footer-custom {
+            border-top: 1px solid var(--gray-200);
+        }
+        
+        .preview-email {
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .badge-prazo {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .badge-aprovacao {
+            background: #0d6efd;
+            color: white;
+        }
+        
+        /* Botão Notificar */
+        .btn-notificar {
+            border: 2px solid var(--gray-200);
+            color: var(--gray-600);
+            padding: 0.625rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-notificar:hover {
+            border-color: #dc0032;
+            color: #dc0032;
+            background: rgba(220, 0, 50, 0.05);
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -293,7 +344,14 @@
                     <small style="color: var(--gray-600);">({{ unidade.tipo }} • {{ unidade.uf }} • {{ unidade.cidade }})</small>
                 </h4>
             </div>
-            <a href="/" class="btn btn-outline-secondary">← Voltar</a>
+            <div>
+                <!-- Botão Notificar (abre modal) -->
+                <button type="button" class="btn btn-notificar me-2" data-bs-toggle="modal" data-bs-target="#modalEmail">
+                    📧 Enviar E-mail
+                </button>
+                <!-- Botão Voltar -->
+                <a href="/" class="btn btn-outline-secondary">← Voltar</a>
+            </div>
         </div>
 
         <!-- Status do Ciclo de Vida -->
@@ -560,10 +618,120 @@
 
             </div>
 
+            <!-- Botão Salvar na cor VERMELHA #dc0032 -->
             <div class="mt-4 text-end">
-                <button type="submit" class="btn btn-success btn-lg px-5">💾 Salvar Alterações</button>
+                <button type="submit" class="btn btn-primary-custom btn-lg px-5">
+                    💾 Salvar Alterações
+                </button>
             </div>
         </form>
+    </div>
+
+    <!-- Modal para envio de Email -->
+    <div class="modal fade" id="modalEmail" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header modal-header-custom">
+                    <h5 class="modal-title">📧 Enviar Notificação</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <!-- Informações da Unidade -->
+                    <div class="bg-light p-3 rounded mb-4">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <small class="text-muted d-block">Unidade</small>
+                                <strong>{{ unidade.nome }}</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted d-block">Cidade/UF</small>
+                                <strong>{{ unidade.cidade }}/{{ unidade.uf }}</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <small class="text-muted d-block">Status</small>
+                                <span class="badge bg-{{ status_unidade_opts[unidade.status_unidade].class }}">
+                                    {{ status_unidade_opts[unidade.status_unidade].label }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <form id="formEmail">
+                        <!-- Opção de destinatários -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">📧 Destinatários</label>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="tipoDestinatario" 
+                                    id="radioConfig" value="config" checked>
+                                <label class="form-check-label" for="radioConfig">
+                                    <strong>Usar emails pré-configurados</strong>
+                                    <br>
+                                    <small class="text-muted">
+                                        Franqueado: {{ email_franqueado }}<br>
+                                        Time: {{ email_time }}
+                                    </small>
+                                </label>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="tipoDestinatario" 
+                                    id="radioManual" value="manual">
+                                <label class="form-check-label" for="radioManual">
+                                    <strong>Digitar emails manualmente</strong>
+                                    <br>
+                                    <small class="text-muted">Separe múltiplos emails com vírgula</small>
+                                </label>
+                            </div>
+                            
+                            <!-- Campos condicionais -->
+                            <div id="emailsConfig" class="mt-3 p-3 border rounded">
+                                <label class="form-label">Tipo de notificação:</label>
+                                <select class="form-select" id="tipoNotificacao">
+                                    <option value="franqueado">📤 Franqueado (prazos)</option>
+                                    <option value="time">👥 Equipe (aprovações)</option>
+                                    <option value="todos">📨 Todos os destinatários</option>
+                                </select>
+                            </div>
+                            
+                            <div id="emailsManual" style="display: none;" class="mt-3 p-3 border rounded">
+                                <label class="form-label">Digite os emails:</label>
+                                <input type="text" class="form-control" id="emailsDigitados" 
+                                    placeholder="exemplo1@email.com, exemplo2@email.com">
+                                <div class="form-text" id="emailPreview"></div>
+                            </div>
+                        </div>
+
+                        <!-- Preview do que será enviado -->
+                        <div class="preview-email" id="resumoNotificacao" style="display: none;">
+                            <h6 class="fw-bold mb-3">📊 Resumo do que será enviado:</h6>
+                            <div class="d-flex gap-3">
+                                <div>
+                                    <span class="badge" style="background: #ffc107; color: #000; padding: 8px 16px;">
+                                        📅 Prazos: <span id="totalPrazos">0</span>
+                                    </span>
+                                </div>
+                                <div>
+                                    <span class="badge" style="background: #0d6efd; color: white; padding: 8px 16px;">
+                                        ⏳ Aprovações: <span id="totalAprovacoes">0</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <button type="button" class="btn" style="background: #dc0032; color: white; border: none;" 
+                            onclick="enviarNotificacao()" id="btnEnviar">
+                        <span id="btnTexto">📤 Enviar E-mail</span>
+                        <span id="btnSpinner" style="display: none;">⏳ Enviando...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -573,7 +741,6 @@
         // Toggle para mostrar/ocultar apenas observação
         function toggleObservacao(itemId, btn) {
             const obsDiv = document.getElementById('obs_' + itemId);
-            const itemDiv = document.getElementById('item_' + itemId);
             
             if (obsDiv.classList.contains('visible')) {
                 obsDiv.classList.remove('visible');
@@ -639,6 +806,701 @@
                 mudarCorAprovacao(select);
             });
         });
+
+        // ========== FUNÇÕES DO MODAL DE EMAIL ==========
+        
+        // Preview dos emails digitados
+        document.getElementById('emailsDigitados')?.addEventListener('input', function(e) {
+            const preview = document.getElementById('emailPreview');
+            const emails = e.target.value.split(',').map(email => email.trim()).filter(email => email);
+            
+            if (emails.length > 0) {
+                preview.innerHTML = `📨 ${emails.length} destinatário(s): ${emails.join(', ')}`;
+                preview.style.color = '#28a745';
+            } else {
+                preview.innerHTML = '';
+            }
+        });
+
+        // Toggle entre configuração manual e pré-configurada
+        document.querySelectorAll('input[name="tipoDestinatario"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                if (this.value === 'manual') {
+                    document.getElementById('emailsConfig').style.display = 'none';
+                    document.getElementById('emailsManual').style.display = 'block';
+                } else {
+                    document.getElementById('emailsConfig').style.display = 'block';
+                    document.getElementById('emailsManual').style.display = 'none';
+                }
+            });
+        });
+
+        // Carregar resumo da unidade ao abrir o modal
+        document.getElementById('modalEmail')?.addEventListener('show.bs.modal', function() {
+            carregarResumoUnidade();
+        });
+
+        function carregarResumoUnidade() {
+                const unidadeId = {{ unidade.id }};
+                
+                // Contar prazos e aprovações manualmente pelo DOM
+                const totalPrazos = document.querySelectorAll('.item-atrasado, .badge-atraso').length;
+                const totalAprovacoes = document.querySelectorAll('select[name^="aprovacao_"] option[value="pendente"]:checked').length;
+                
+                document.getElementById('totalPrazos').textContent = totalPrazos;
+                document.getElementById('totalAprovacoes').textContent = totalAprovacoes;
+                
+                if (totalPrazos > 0 || totalAprovacoes > 0) {
+                    document.getElementById('resumoNotificacao').style.display = 'block';
+                }
+            }
+
+            function enviarNotificacao() {
+
+            const unidadeId = {{ unidade.id }};
+            const tipoDestinatario = document.querySelector('input[name="tipoDestinatario"]:checked').value;
+
+            let dados = {};  // ← FALTAVA ISSO
+
+            if (tipoDestinatario === 'manual') {
+                dados.emails = document.getElementById('emailsDigitados').value;
+            } else {
+                dados.tipo = document.getElementById('tipoNotificacao').value;
+            }
+
+                
+                // UI Loading
+                const btn = document.getElementById('btnEnviar');
+                const btnTexto = document.getElementById('btnTexto');
+                const btnSpinner = document.getElementById('btnSpinner');
+                
+                btn.disabled = true;
+                btnTexto.style.display = 'none';
+                btnSpinner.style.display = 'inline';
+                
+                // Envia requisição
+                fetch(`/notificar/${unidadeId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(dados)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Mensagem de sucesso detalhada
+                        let mensagem = '✅ ' + data.message;
+                        if (data.alertas > 0 || data.pendentes > 0) {
+                            mensagem += `\n\n📊 Resumo enviado:`;
+                            if (data.alertas > 0) mensagem += `\n- ${data.alertas} item(ns) com prazo`;
+                            if (data.pendentes > 0) mensagem += `\n- ${data.pendentes} aprovação(ões) pendente(s)`;
+                        }
+                        alert(mensagem);
+                        
+                        // Fecha o modal
+                        bootstrap.Modal.getInstance(document.getElementById('modalEmail')).hide();
+                    } else {
+                        alert('❌ Erro: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('❌ Erro de conexão: ' + error);
+                    console.error('Erro:', error);
+                })
+                .finally(() => {
+                    // Restaura botão
+                    btn.disabled = false;
+                    btnTexto.style.display = 'inline';
+                    btnSpinner.style.display = 'none';
+                });
+            }
+
+        // Função para testar email (modo desenvolvimento)
+        function testarEmail() {
+            fetch('/testar-email')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ ' + data.message);
+                } else {
+                    alert('❌ ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('❌ Erro: ' + error);
+            });
+        }
+
+        // Função para verificar status do email
+        function verificarStatusEmail() {
+            fetch('/status-email')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    let config = data.config;
+                    let mensagem = "CONFIGURAÇÃO DE EMAIL\n\n";
+                    mensagem += `Servidor: ${config.MAIL_SERVER}\n`;
+                    mensagem += `Porta: ${config.MAIL_PORT}\n`;
+                    mensagem += `TLS: ${config.MAIL_USE_TLS}\n`;
+                    mensagem += `Usuário: ${config.MAIL_USERNAME}\n`;
+                    mensagem += `Franqueado: ${config.EMAIL_FRANQUEADO}\n`;
+                    mensagem += `Time: ${config.EMAIL_TIME}\n`;
+                    alert(mensagem);
+                }
+            });
+        }
+
+        // Função simples (fallback) para compatibilidade
+        function enviarNotificacaoSimples(tipo) {
+            const unidadeId = {{ unidade.id }};
+            
+            fetch(`/notificar/${unidadeId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tipo: tipo })
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                if (data.alertas && data.alertas.length > 0) {
+                    console.log('Alertas:', data.alertas);
+                }
+            })
+            .catch(error => {
+                alert('Erro ao enviar notificações');
+                console.error('Erro:', error);
+            });
+        }
     </script>
+
+    <!-- Estilos adicionais para o modal -->
+    <style>
+        /* Ajustes no modal */
+        .modal-header-custom {
+            background: #dc0032;
+            color: white;
+            border-bottom: none;
+            padding: 1rem 1.5rem;
+        }
+        
+        .modal-header-custom .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.8;
+        }
+        
+        .modal-header-custom .btn-close:hover {
+            opacity: 1;
+        }
+        
+        .modal-footer-custom {
+            border-top: 1px solid #dee2e6;
+            padding: 1rem 1.5rem;
+        }
+        
+        /* Preview de emails */
+        .preview-email {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        
+        #emailPreview {
+            font-size: 0.875rem;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            background: white;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+        }
+        
+        /* Badges personalizadas */
+        .badge-prazo {
+            background: #ffc107;
+            color: #000;
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+        }
+        
+        .badge-aprovacao {
+            background: #0d6efd;
+            color: white;
+            font-size: 0.875rem;
+            padding: 0.5rem 1rem;
+        }
+        
+        /* Botão notificar */
+        .btn-notificar {
+            border: 2px solid #dee2e6;
+            color: #495057;
+            padding: 0.625rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            background: white;
+        }
+        
+        .btn-notificar:hover {
+            border-color: #dc0032;
+            color: #dc0032;
+            background: rgba(220, 0, 50, 0.05);
+        }
+        
+        /* Botão salvar personalizado */
+        .btn-primary-custom {
+            background: #dc0032;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            font-weight: 600;
+            color: white;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(220, 0, 50, 0.2);
+        }
+        
+        .btn-primary-custom:hover {
+            background: #b8002a;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(220, 0, 50, 0.3);
+            color: white;
+        }
+        
+        .btn-primary-custom:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(220, 0, 50, 0.2);
+        }
+        
+        .btn-primary-custom:disabled {
+            background: #e9ecef;
+            color: #6c757d;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* Tooltips personalizados */
+        [data-tooltip] {
+            position: relative;
+            cursor: help;
+        }
+        
+        [data-tooltip]:before {
+            content: attr(data-tooltip);
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.5rem;
+            background: #333;
+            color: white;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            white-space: nowrap;
+            display: none;
+            z-index: 1000;
+        }
+        
+        [data-tooltip]:hover:before {
+            display: block;
+        }
+        
+        /* Animações */
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .loading-pulse {
+            animation: pulse 1.5s infinite;
+        }
+        
+        /* Responsividade */
+        @media (max-width: 768px) {
+            .d-flex.gap-3 {
+                flex-direction: column;
+            }
+            
+            .btn-primary-custom {
+                width: 100%;
+            }
+            
+            .btn-notificar {
+                width: 100%;
+                margin-bottom: 0.5rem;
+            }
+            
+            .modal-dialog {
+                margin: 0.5rem;
+            }
+        }
+    </style>
+
+
+<script>
+    const hoje = "{{ hoje }}";
+    
+    // Toggle para mostrar/ocultar apenas observação
+    function toggleObservacao(itemId, btn) {
+        const obsDiv = document.getElementById('obs_' + itemId);
+        
+        if (obsDiv.classList.contains('visible')) {
+            obsDiv.classList.remove('visible');
+            btn.classList.remove('active');
+            btn.innerHTML = '💬 Adicionar Observação';
+        } else {
+            obsDiv.classList.add('visible');
+            btn.classList.add('active');
+            btn.innerHTML = '💬 Ocultar Observação';
+        }
+    }
+    
+    function toggleCampoData(checkbox) {
+        const container = checkbox.closest('.list-group-item');
+        const previsaoDiv = container.querySelector('.campo-previsao');
+        const conclusaoDiv = container.querySelector('.campo-conclusao');
+        
+        if (checkbox.checked) {
+            if (previsaoDiv) previsaoDiv.style.display = 'none';
+            if (conclusaoDiv) conclusaoDiv.style.display = 'block';
+            container.classList.remove('item-atrasado');
+            
+            const conclusaoInput = conclusaoDiv ? conclusaoDiv.querySelector('input') : null;
+            if (conclusaoInput && !conclusaoInput.value) {
+                conclusaoInput.value = new Date().toISOString().split('T')[0];
+            }
+        } else {
+            if (conclusaoDiv) conclusaoDiv.style.display = 'none';
+            if (previsaoDiv) previsaoDiv.style.display = 'block';
+            
+            const previsaoInput = previsaoDiv ? previsaoDiv.querySelector('input') : null;
+            if (previsaoInput && previsaoInput.value && previsaoInput.value < hoje) {
+                container.classList.add('item-atrasado');
+            }
+        }
+    }
+    
+    function mudarCorAprovacao(select) {
+        const valor = select.value;
+        select.classList.remove('aprovacao-aprovado', 'aprovacao-recusado', 'aprovacao-pendente');
+        
+        if (valor === 'aprovado') {
+            select.classList.add('aprovacao-aprovado');
+        } else if (valor === 'recusado') {
+            select.classList.add('aprovacao-recusado');
+        } else {
+            select.classList.add('aprovacao-pendente');
+        }
+    }
+    
+    // ========== FUNÇÕES DO MODAL DE EMAIL ==========
+    
+    // Função para enviar notificação
+    function enviarNotificacao() {
+        const unidadeId = {{ unidade.id }};
+        
+        // Pegar valores do modal
+        const tipoDestinatario = document.querySelector('input[name="tipoDestinatario"]:checked');
+        
+        if (!tipoDestinatario) {
+            alert('❌ Selecione um tipo de destinatário');
+            return;
+        }
+        
+        // Preparar dados
+        let dados = {};
+        
+        if (tipoDestinatario.value === 'manual') {
+            const emailsInput = document.getElementById('emailsDigitados');
+            if (!emailsInput || !emailsInput.value.trim()) {
+                alert('❌ Digite pelo menos um email');
+                return;
+            }
+            dados.emails = emailsInput.value;
+            dados.tipo = 'todos';
+        } else {
+            const selectTipo = document.getElementById('tipoNotificacao');
+            if (!selectTipo) {
+                alert('❌ Erro: elemento não encontrado');
+                return;
+            }
+            dados.tipo = selectTipo.value;
+        }
+        
+        // UI Loading
+        const btn = document.getElementById('btnEnviar');
+        const btnTexto = document.getElementById('btnTexto');
+        const btnSpinner = document.getElementById('btnSpinner');
+        
+        if (btn) btn.disabled = true;
+        if (btnTexto) btnTexto.style.display = 'none';
+        if (btnSpinner) btnSpinner.style.display = 'inline';
+        
+        // Envia requisição
+        fetch(`/notificar/${unidadeId}`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(dados)
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Erro HTTP! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                let mensagem = '✅ ' + data.message;
+                if (data.alertas > 0 || data.pendentes > 0) {
+                    mensagem += `\n\n📊 Resumo:`;
+                    if (data.alertas > 0) mensagem += `\n- ${data.alertas} item(ns) com prazo`;
+                    if (data.pendentes > 0) mensagem += `\n- ${data.pendentes} aprovação(ões) pendente(s)`;
+                }
+                alert(mensagem);
+                
+                // Fecha o modal
+                const modalElement = document.getElementById('modalEmail');
+                const modal = bootstrap.Modal.getInstance(modalElement);
+                if (modal) modal.hide();
+            } else {
+                alert('❌ Erro: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Erro completo:', error);
+            alert('❌ Erro de conexão: ' + error.message);
+        })
+        .finally(() => {
+            // Restaura botão
+            if (btn) btn.disabled = false;
+            if (btnTexto) btnTexto.style.display = 'inline';
+            if (btnSpinner) btnSpinner.style.display = 'none';
+        });
+    }
+    
+    // Função para carregar resumo da unidade
+    function carregarResumoUnidade() {
+        const unidadeId = {{ unidade.id }};
+        
+        fetch(`/notificar/${unidadeId}`, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ tipo: 'preview' })
+        })
+        .then(response => response.json())
+        .then(data => {
+            const totalPrazos = document.getElementById('totalPrazos');
+            const totalAprovacoes = document.getElementById('totalAprovacoes');
+            const resumoDiv = document.getElementById('resumoNotificacao');
+            
+            if (totalPrazos) totalPrazos.textContent = data.alertas || 0;
+            if (totalAprovacoes) totalAprovacoes.textContent = data.pendentes || 0;
+            
+            if (resumoDiv) {
+                if (data.alertas > 0 || data.pendentes > 0) {
+                    resumoDiv.style.display = 'block';
+                } else {
+                    resumoDiv.style.display = 'none';
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Erro ao carregar resumo:', error);
+        });
+    }
+    
+    // Função para testar email (modo desenvolvimento)
+    function testarEmail() {
+        fetch('/testar-email')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('✅ ' + data.message);
+            } else {
+                alert('❌ ' + data.message);
+            }
+        })
+        .catch(error => {
+            alert('❌ Erro: ' + error);
+        });
+    }
+    
+    // Função para verificar status do email
+    function verificarStatusEmail() {
+        fetch('/status-email')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                let config = data.config;
+                let mensagem = "📧 CONFIGURAÇÃO DE EMAIL\n\n";
+                mensagem += `Servidor: ${config.MAIL_SERVER}\n`;
+                mensagem += `Porta: ${config.MAIL_PORT}\n`;
+                mensagem += `TLS: ${config.MAIL_USE_TLS}\n`;
+                mensagem += `Usuário: ${config.MAIL_USERNAME}\n`;
+                mensagem += `Franqueado: ${config.EMAIL_FRANQUEADO}\n`;
+                mensagem += `Time: ${config.EMAIL_TIME}\n`;
+                alert(mensagem);
+            }
+        });
+    }
+    
+    // ========== EVENT LISTENERS ==========
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Inicialização dos itens atrasados
+        document.querySelectorAll('.list-group-item').forEach(function(container) {
+            const checkbox = container.querySelector('input[type="checkbox"]');
+            if (checkbox && !checkbox.checked) {
+                const previsaoInput = container.querySelector('input[name^="previsao_"]');
+                if (previsaoInput && previsaoInput.value && previsaoInput.value < hoje) {
+                    container.classList.add('item-atrasado');
+                }
+            }
+        });
+        
+        // Inicialização das cores de aprovação
+        document.querySelectorAll('select[name^="aprovacao_"]').forEach(function(select) {
+            mudarCorAprovacao(select);
+        });
+        
+        // ===== EVENTOS DO MODAL =====
+        
+        // Toggle entre configuração manual e pré-configurada
+        document.querySelectorAll('input[name="tipoDestinatario"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const emailsConfig = document.getElementById('emailsConfig');
+                const emailsManual = document.getElementById('emailsManual');
+                
+                if (this.value === 'manual') {
+                    if (emailsConfig) emailsConfig.style.display = 'none';
+                    if (emailsManual) emailsManual.style.display = 'block';
+                } else {
+                    if (emailsConfig) emailsConfig.style.display = 'block';
+                    if (emailsManual) emailsManual.style.display = 'none';
+                }
+            });
+        });
+        
+        // Preview dos emails digitados
+        const emailsInput = document.getElementById('emailsDigitados');
+        if (emailsInput) {
+            emailsInput.addEventListener('input', function(e) {
+                const preview = document.getElementById('emailPreview');
+                const emails = e.target.value.split(',').map(email => email.trim()).filter(email => email);
+                
+                if (preview) {
+                    if (emails.length > 0) {
+                        preview.innerHTML = `📨 ${emails.length} destinatário(s): ${emails.join(', ')}`;
+                        preview.style.color = '#28a745';
+                        preview.style.fontWeight = 'bold';
+                    } else {
+                        preview.innerHTML = '';
+                    }
+                }
+            });
+        }
+        
+        // Carregar resumo ao abrir o modal
+        const modal = document.getElementById('modalEmail');
+        if (modal) {
+            modal.addEventListener('show.bs.modal', carregarResumoUnidade);
+            
+            // Limpar campos ao fechar o modal
+            modal.addEventListener('hidden.bs.modal', function() {
+                // Resetar para opção configurada
+                const radioConfig = document.getElementById('radioConfig');
+                if (radioConfig) {
+                    radioConfig.checked = true;
+                    const event = new Event('change');
+                    radioConfig.dispatchEvent(event);
+                }
+                
+                // Limpar campo de emails
+                if (emailsInput) emailsInput.value = '';
+                
+                // Limpar preview
+                const preview = document.getElementById('emailPreview');
+                if (preview) preview.innerHTML = '';
+            });
+        }
+        
+        // ===== TOOLTIPS E MELHORIAS =====
+        
+        // Tooltip para botão salvar
+        const btnSalvar = document.querySelector('.btn-primary-custom');
+        if (btnSalvar) {
+            btnSalvar.setAttribute('data-tooltip', 'Salva todas as alterações do checklist');
+        }
+        
+        // Tooltip para botão notificar
+        const btnNotificar = document.querySelector('.btn-notificar');
+        if (btnNotificar) {
+            btnNotificar.setAttribute('data-tooltip', 'Envia notificações por email');
+        }
+        
+        // Auto-salva a data de conclusão quando checkbox é marcado
+        document.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                if (this.checked) {
+                    const conclusaoInput = this.closest('.list-group-item')?.querySelector('input[name^="conclusao_"]');
+                    if (conclusaoInput && !conclusaoInput.value) {
+                        conclusaoInput.value = new Date().toISOString().split('T')[0];
+                    }
+                }
+            });
+        });
+        
+        // Validação de email em tempo real
+        document.querySelectorAll('input[type="email"]').forEach(input => {
+            input.addEventListener('blur', function() {
+                const email = this.value;
+                if (email && !email.match(/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/)) {
+                    this.classList.add('is-invalid');
+                    
+                    // Adiciona mensagem de erro se não existir
+                    let feedback = this.nextElementSibling;
+                    if (!feedback || !feedback.classList.contains('invalid-feedback')) {
+                        feedback = document.createElement('div');
+                        feedback.className = 'invalid-feedback';
+                        feedback.textContent = 'Por favor, insira um email válido';
+                        this.parentNode.insertBefore(feedback, this.nextSibling);
+                    }
+                } else {
+                    this.classList.remove('is-invalid');
+                    const feedback = this.nextElementSibling;
+                    if (feedback && feedback.classList.contains('invalid-feedback')) {
+                        feedback.remove();
+                    }
+                }
+            });
+        });
+        
+        // Confirmação antes de sair da página se houver alterações não salvas
+        let formModificado = false;
+        const form = document.getElementById('checklistForm');
+        
+        if (form) {
+            form.addEventListener('input', function() {
+                formModificado = true;
+            });
+            
+            form.addEventListener('submit', function() {
+                formModificado = false;
+            });
+            
+            window.addEventListener('beforeunload', function(e) {
+                if (formModificado) {
+                    e.preventDefault();
+                    e.returnValue = 'Existem alterações não salvas. Deseja realmente sair?';
+                }
+            });
+        }
+    });
+</script>
 </body>
 </html>

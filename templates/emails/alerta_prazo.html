@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .header { background: #dc0032; color: white; padding: 20px; }
+        .alerta { background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 10px 0; }
+        .vencido { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .botao { background: #dc0032; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>🔔 Alerta de Prazos - {{ unidade.nome }}</h2>
+    </div>
+    {% for alerta in alertas %}
+    <div class="{% if alerta.status == 'vencido' %}vencido{% else %}alerta{% endif %}">
+        <strong>{{ alerta.item }}</strong><br>
+        {% if alerta.status == 'vencido' %}
+            <span style="color: #dc3545;">⛔ Vencido há {{ alerta.dias }} dias</span>
+        {% else %}
+            <span style="color: #ffc107;">⚠️ Vence em {{ alerta.dias }} dias</span>
+        {% endif %}
+    </div>
+    {% endfor %}
+    <a href="https://seudominio.com/gerenciar/{{ unidade.id }}" class="botao">Acessar Checklist</a>
+</body>
+</html>
