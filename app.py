@@ -471,7 +471,8 @@ def verificar_todas_unidades():
         hoje = date.today()
         
         for unidade in unidades:
-            status_salvo = unidade.status
+            status_salvo = unidade.checklist_status
+
             alertas = verificar_prazos_e_notificar(unidade, status_salvo)
             
             # Envia se houver alertas (evita spam - a cada 24h)
@@ -768,8 +769,10 @@ def encontrar_nome_por_id(id_item):
 
 @app.route('/notificar/<int:unidade_id>', methods=['POST'])
 def notificar_unidade(unidade_id):
+    
     unidade = Unidade.query.get_or_404(unidade_id)
-    status_salvo = unidade.status
+
+    status_salvo = json.loads(unidade.checklist_status or "{}")
     
     # Pega os dados do POST
     data = request.get_json()
