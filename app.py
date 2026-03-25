@@ -1248,6 +1248,154 @@ def utility_processor():
     return dict(now=now)
 
 
+# ==================== PAINEL DE DIAGNÓSTICO ====================
+
+@app.route('/diagnostico')
+def painel_diagnostico():
+    """Painel de diagnóstico com interface visual"""
+    return render_template('diagnostico.html')
+
+
+@app.route('/api/diagnostico')
+def api_diagnostico():
+    """API com informações de diagnóstico completas"""
+    try:
+        # Status do Banco de Dados
+        db_status = {
+            'conectado': True,
+            'tipo': 'SQLite' if 'sqlite' in app.config.get('SQLALCHEMY_DATABASE_URI', '').lower() else 'PostgreSQL',
+            'unidades_total': Unidade.query.count(),
+            'logs_total': LogEtapa.query.count(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar BD: {str(e)}")
+        db_status = {
+            'conectado': False,
+            'erro': str(e)
+        }
+    
+    try:
+        # Status de Email
+        email_configurado = bool(app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD'))
+        email_status = {
+            'configurado': email_configurado,
+            'server': app.config.get('MAIL_SERVER'),
+            'port': app.config.get('MAIL_PORT'),
+            'username': app.config.get('MAIL_USERNAME') or 'Não configurado',
+        }
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar Email: {str(e)}")
+        email_status = {'erro': str(e)}
+    
+    try:
+        # Status de Backup
+        from backup_service import backups_em_memoria
+        backup_status = {
+            'funcional': True,
+            'backups_total': len(backups_em_memoria),
+            'backups': [
+                {
+                    'nome': backup_id,
+                    'tamanho_kb': info['tamanho_bytes'] / 1024,
+                    'data': info['criado_em'].isoformat()
+                }
+                for backup_id, info in list(backups_em_memoria.items())[:5]  # Últimos 5
+            ]
+        }
+    except Exception as e:
+        logger.error(f"❌ Erro ao verificar Backup: {str(e)}")
+        backup_status = {
+            'funcional': False,
+            'erro': str(e)
+        }
+    
+    # Compilar diagnóstico completo
+    diagnostico = {
+        'timestamp': datetime.now().isoformat(),
+        'ambiente': os.environ.get('FLASK_ENV', 'development'),
+        'banco_dados': db_status,
+        'email': email_status,
+        'backup': backup_status,
+        'sistema': {
+            'python_version': '3.12',
+            'flask_version': '3.1.3',
+            'running': True
+        }
+    }
+    
+    return jsonify(diagnostico)
+
+
+@app.route('/testar-email', methods=['GET', 'POST'])
+def testar_email_completo():
+    """Testa o envio de email com log detalhado"""
+    try:
+        # Verificar configuração
+        if not app.config.get('MAIL_USERNAME'):
+            logger.error("❌ MAIL_USERNAME não configurado")
+            return jsonify({
+                'sucesso': False,
+                'erro': 'MAIL_USERNAME não configurado nas variáveis de ambiente',
+                'dica': 'Configure no Render → Environment → MAIL_USERNAME'
+            }), 400
+        
+        if not app.config.get('MAIL_PASSWORD'):
+            logger.error("❌ MAIL_PASSWORD não configurado")
+            return jsonify({
+                'sucesso': False,
+                'erro': 'MAIL_PASSWORD não configurado nas variáveis de ambiente',
+                'dica': 'Configure no Render → Environment → MAIL_PASSWORD (use Senha App do Gmail)'
+            }), 400
+        
+        logger.info(f"📧 Iniciando teste de email para: {app.config.get('MAIL_DEFAULT_SENDER')}")
+        
+        # Inicializar serviço de email
+        from email_service import EmailService
+        email_service = EmailService(app)
+        
+        # Enviar email de teste
+        assunto = "🧪 Email de Teste - Control System"
+        corpo = f"""
+        <h2>Teste de Email</h2>
+        <p>Este é um email de teste do Control System.</p>
+        <p><strong>Timestamp:</strong> {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</p>
+        <p><strong>Ambiente:</strong> {os.environ.get('FLASK_ENV', 'development')}</p>
+        <p>Se você recebeu este email, o sistema de notificações está funcionando corretamente!</p>
+        """
+        
+        destinatario = app.config.get('MAIL_DEFAULT_SENDER')
+        
+        sucesso, mensagem = email_service.enviar(
+            assunto=assunto,
+            corpo_html=corpo,
+            destinatarios=destinatario
+        )
+        
+        if sucesso:
+            logger.info(f"✅ Email de teste enviado com sucesso para {destinatario}")
+            return jsonify({
+                'sucesso': True,
+                'mensagem': f'Email enviado com sucesso para {destinatario}',
+                'timestamp': datetime.now().isoformat()
+            })
+        else:
+            logger.error(f"❌ Falha ao enviar email: {mensagem}")
+            return jsonify({
+                'sucesso': False,
+                'erro': mensagem,
+                'dica': 'Verifique o painel /diagnostico para mais detalhes'
+            }), 400
+    
+    except Exception as e:
+        logger.error(f"❌ ERRO ao testar email: {str(e)}")
+        return jsonify({
+            'sucesso': False,
+            'erro': str(e),
+            'tipo_erro': type(e).__name__,
+            'dica': 'Verifique os logs do Render'
+        }), 500
+
+
 # ==================== EXECUÇÃO ====================
 
 if __name__ == '__main__':
