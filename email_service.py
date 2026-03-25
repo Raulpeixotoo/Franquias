@@ -86,9 +86,20 @@ class EmailService:
         """
         try:
             # Validar configuração
-            if not self.app.config.get('MAIL_USERNAME') or not self.app.config.get('MAIL_PASSWORD'):
-                logger.error("❌ MAIL_USERNAME ou MAIL_PASSWORD não configurados")
-                return False, "Configuração de email incompleta"
+            if not self.app.config.get('MAIL_USERNAME'):
+                logger.error("❌ MAIL_USERNAME não configurado")
+                logger.error("   Adicione a variável MAIL_USERNAME no Render Environment")
+                return False, "MAIL_USERNAME não configurado"
+            
+            if not self.app.config.get('MAIL_PASSWORD'):
+                logger.error("❌ MAIL_PASSWORD não configurado")
+                logger.error("   Adicione a variável MAIL_PASSWORD no Render Environment")
+                return False, "MAIL_PASSWORD não configurado"
+            
+            # Log das configurações (sem expor senha)
+            logger.info(f"📧 Email config: server={self.app.config.get('MAIL_SERVER')}, "
+                       f"port={self.app.config.get('MAIL_PORT')}, "
+                       f"user={self.app.config.get('MAIL_USERNAME')}")
             
             # Garantir que destinatários seja uma lista
             if isinstance(destinatarios, str):

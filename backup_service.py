@@ -1,55 +1,55 @@
-"""Serviço de backup e restore do banco de dados"""
-import os
-import shutil
-import sqlite3
-import json
+"""Serviço de backup e restore do banco de dados
+Compatível com ambientes read-only (Render, Heroku) - sem uso de arquivos
+"""
 from datetime import datetime
 import logging
-from pathlib import Path
+import json
 
 logger = logging.getLogger(__name__)
 
+# Armazena backups em memória
+backups_em_memoria = {}
+
 
 class BackupService:
-    """Serviço para fazer backup e restore do banco de dados"""
+    """Serviço de backup baseado em dados (sem arquivos)"""
     
-    def __init__(self, db_path: str, backup_dir: str = None):
-        """
-        Inicializa o serviço de backup
-        
-        Args:
-            db_path: Caminho do arquivo .db (ex: instance/checklist.db)
-            backup_dir: Diretório para armazenar backups (padrão: backups/)
-        """
-        self.db_path = db_path
-        self.backup_dir = backup_dir or os.path.join(
-            os.path.dirname(db_path), '..', 'backups'
-        )
-        os.makedirs(self.backup_dir, exist_ok=True)
+    def __init__(self, app=None):
+        """Inicializa o serviço de backup"""
+        self.app = app
     
     def criar_backup(self) -> tuple[bool, str]:
         """
-        Cria um backup do banco de dados
+        Cria um backup dos dados do banco (JSON em memória)
         
         Returns:
-            (sucesso: bool, nome_arquivo: str)
+            (sucesso: bool, id_backup: str)
         """
         try:
-            if not os.path.exists(self.db_path):
-                return False, f"Banco de dados não encontrado: {self.db_path}"
+            if not self.app:
+                return False, "App não configurado"
             
-            # Nome do arquivo com timestamp
+            # Exportar dados
+            sucesso, dados = self.exportar_json()
+            if not sucesso:
+                return False, "Erro ao exportar dados"
+            
+            # Gerar ID único
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            nome_backup = f"checklist_backup_{timestamp}.db"
-            caminho_backup = os.path.join(self.backup_dir, nome_backup)
+            backup_id = f"backup_{timestamp}"
             
-            # Copiar arquivo
-            shutil.copy2(self.db_path, caminho_backup)
+            # Armazenar em memória
+            backups_em_memoria[backup_id] = {
+                'dados': dados,
+                'criado_em': datetime.now(),
+                'tamanho_bytes': len(json.dumps(dados).encode('utf-8'))
+            }
             
-            tamanho_mb = os.path.getsize(caminho_backup) / (1024 * 1024)
-            logger.info(f"✅ Backup criado: {nome_backup} ({tamanho_mb:.2f} MB)")
+            tamanho_kb = backups_em_memoria[backup_id]['tamanho_bytes'] / 1024
+            logger.info(f"✅ Backup criado: {backup_id} ({tamanho_kb:.2f} KB)")
             
-            return True, nome_backup
+            return True, backup_id
+        
         except Exception as e:
             logger.error(f"❌ Erro ao criar backup: {str(e)}")
             return False, str(e)
@@ -59,68 +59,112 @@ class BackupService:
         backups = []
         
         try:
-            if not os.path.exists(self.backup_dir):
-                return backups
-            
-            for arquivo in sorted(os.listdir(self.backup_dir), reverse=True):
-                if arquivo.endswith('.db'):
-                    caminho = os.path.join(self.backup_dir, arquivo)
-                    tamanho = os.path.getsize(caminho)
-                    data_modif = datetime.fromtimestamp(os.path.getmtime(caminho))
-                    
-                    backups.append({
-                        'nome': arquivo,
-                        'caminho': caminho,
-                        'tamanho_mb': round(tamanho / (1024 * 1024), 2),
-                        'data': data_modif.strftime('%d/%m/%Y %H:%M:%S'),
-                        'timestamp': int(os.path.getmtime(caminho))
-                    })
+            for backup_id, info in sorted(backups_em_memoria.items(), reverse=True):
+                tamanho_kb = info['tamanho_bytes'] / 1024
+                backups.append({
+                    'nome': backup_id,
+                    'id': backup_id,
+                    'tamanho_mb': round(tamanho_kb / 1024, 2),
+                    'tamanho_kb': round(tamanho_kb, 2),
+                    'data': info['criado_em'].strftime('%d/%m/%Y %H:%M:%S'),
+                    'timestamp': int(info['criado_em'].timestamp())
+                })
         except Exception as e:
             logger.error(f"❌ Erro ao listar backups: {str(e)}")
         
         return backups
     
-    def restaurar_backup(self, nome_backup: str) -> tuple[bool, str]:
+    def restaurar_backup(self, backup_id: str) -> tuple[bool, str]:
         """
         Restaura um backup do banco de dados
         
         Args:
-            nome_backup: Nome do arquivo backup
+            backup_id: ID do backup
         
         Returns:
             (sucesso: bool, mensagem: str)
         """
         try:
-            caminho_backup = os.path.join(self.backup_dir, nome_backup)
+            if backup_id not in backups_em_memoria:
+                return False, f"Backup não encontrado: {backup_id}"
             
-            # Validar segurança - não permitir path traversal
-            backup_real = os.path.realpath(caminho_backup)
-            backup_dir_real = os.path.realpath(self.backup_dir)
+            dados = backups_em_memoria[backup_id]['dados']
             
-            if not backup_real.startswith(backup_dir_real):
-                return False, "Arquivo de backup inválido"
+            # Importar dados
+            sucesso, mensagem = self.importar_json(dados)
             
-            if not os.path.exists(caminho_backup):
-                return False, f"Backup não encontrado: {nome_backup}"
-            
-            # Criar backup do backup (segurança)
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            nome_backup_seguranca = f"backup_antes_restore_{timestamp}.db"
-            caminho_backup_seguranca = os.path.join(self.backup_dir, nome_backup_seguranca)
-            
-            # Copiar DB atual como backup de segurança
-            if os.path.exists(self.db_path):
-                shutil.copy2(self.db_path, caminho_backup_seguranca)
-                logger.info(f"✅ Backup de segurança criado: {nome_backup_seguranca}")
-            
-            # Restaurar
-            shutil.copy2(caminho_backup, self.db_path)
-            logger.info(f"✅ Banco de dados restaurado de: {nome_backup}")
-            
-            return True, f"Banco restaurado com sucesso! Salvo como: {nome_backup_seguranca}"
+            if sucesso:
+                logger.info(f"✅ Banco restaurado de: {backup_id}")
+                return True, f"Restaurado com sucesso de: {backup_id}\n{mensagem}"
+            else:
+                return False, f"Erro ao restaurar: {mensagem}"
         
         except Exception as e:
             logger.error(f"❌ Erro ao restaurar backup: {str(e)}")
+            return False, str(e)
+    
+    def fazer_download_backup(self, backup_id: str) -> tuple[bool, str, bytes]:
+        """
+        Retorna dados do backup como arquivo JSON para download
+        
+        Args:
+            backup_id: ID do backup
+        
+        Returns:
+            (sucesso: bool, nome_arquivo: str, conteudo: bytes)
+        """
+        try:
+            if backup_id not in backups_em_memoria:
+                return False, "", b""
+            
+            dados = backups_em_memoria[backup_id]['dados']
+            
+            # Gerar arquivo JSON
+            conteudo = json.dumps(dados, indent=2, ensure_ascii=False).encode('utf-8')
+            nome_arquivo = f"{backup_id}.json"
+            
+            logger.info(f"✅ Download preparado: {nome_arquivo}")
+            return True, nome_arquivo, conteudo
+        
+        except Exception as e:
+            logger.error(f"❌ Erro ao preparar download: {str(e)}")
+            return False, "", b""
+    
+    def fazer_upload_backup(self, arquivo_conteudo: bytes) -> tuple[bool, str]:
+        """
+        Faz upload de um arquivo JSON de backup
+        
+        Args:
+            arquivo_conteudo: Conteúdo do arquivo em bytes
+        
+        Returns:
+            (sucesso: bool, mensagem: str)
+        """
+        try:
+            # Tentar desserializar JSON
+            dados = json.loads(arquivo_conteudo.decode('utf-8'))
+            
+            if not isinstance(dados, dict) or dados.get('tipo') != 'checklist_backup':
+                return False, "Arquivo inválido! Certifique-se que é um backup válido."
+            
+            # Gerar ID para novo backup
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_id = f"backup_upload_{timestamp}"
+            
+            # Armazenar
+            backups_em_memoria[backup_id] = {
+                'dados': dados,
+                'criado_em': datetime.now(),
+                'tamanho_bytes': len(arquivo_conteudo)
+            }
+            
+            logger.info(f"✅ Backup restaurado do upload: {backup_id}")
+            return True, f"Arquivo importado com sucesso! ID: {backup_id}"
+        
+        except json.JSONDecodeError:
+            return False, "Arquivo não é um JSON válido"
+        except Exception as e:
+            logger.error(f"❌ Erro ao fazer upload: {str(e)}")
             return False, str(e)
     
     def exportar_json(self) -> tuple[bool, dict]:
@@ -131,49 +175,48 @@ class BackupService:
             (sucesso: bool, dados: dict)
         """
         try:
-            from app import Unidade, LogEtapa, db
+            from models import Unidade, LogEtapa
             
-            with db.app.app_context():
-                # Coletar unidades
-                unidades = Unidade.query.all()
-                logs = LogEtapa.query.all()
-                
-                dados = {
-                    'tipo': 'checklist_backup',
-                    'data_export': datetime.now().isoformat(),
-                    'total_unidades': len(unidades),
-                    'total_logs': len(logs),
-                    'unidades': [],
-                    'logs': []
-                }
-                
-                # Serializar unidades
-                for u in unidades:
-                    dados['unidades'].append({
-                        'id': u.id,
-                        'nome': u.nome,
-                        'cidade': u.cidade,
-                        'uf': u.uf,
-                        'tipo': u.tipo,
-                        'status_unidade': u.status_unidade,
-                        'checklist_status': u.checklist_status,
-                        'criado_em': u.criado_em.isoformat() if hasattr(u, 'criado_em') else None,
-                        'atualizado_em': u.atualizado_em.isoformat() if hasattr(u, 'atualizado_em') else None
-                    })
-                
-                # Serializar logs
-                for log in logs:
-                    dados['logs'].append({
-                        'id': log.id,
-                        'unidade_id': log.unidade_id,
-                        'etapa': log.etapa,
-                        'acao': log.acao,
-                        'observacao': log.observacao,
-                        'data': log.data.isoformat()
-                    })
-                
-                logger.info(f"✅ Dados exportados: {len(unidades)} unidades, {len(logs)} logs")
-                return True, dados
+            # Coletar unidades
+            unidades = Unidade.query.all()
+            logs = LogEtapa.query.all()
+            
+            dados = {
+                'tipo': 'checklist_backup',
+                'data_export': datetime.now().isoformat(),
+                'total_unidades': len(unidades),
+                'total_logs': len(logs),
+                'unidades': [],
+                'logs': []
+            }
+            
+            # Serializar unidades
+            for u in unidades:
+                dados['unidades'].append({
+                    'id': u.id,
+                    'nome': u.nome,
+                    'cidade': u.cidade,
+                    'uf': u.uf,
+                    'tipo': u.tipo,
+                    'status_unidade': u.status_unidade,
+                    'checklist_status': u.checklist_status,
+                    'criado_em': u.criado_em.isoformat() if hasattr(u, 'criado_em') else None,
+                    'atualizado_em': u.atualizado_em.isoformat() if hasattr(u, 'atualizado_em') else None
+                })
+            
+            # Serializar logs
+            for log in logs:
+                dados['logs'].append({
+                    'id': log.id,
+                    'unidade_id': log.unidade_id,
+                    'etapa': log.etapa,
+                    'acao': log.acao,
+                    'observacao': log.observacao,
+                    'data': log.data.isoformat()
+                })
+            
+            logger.info(f"✅ Dados exportados: {len(unidades)} unidades, {len(logs)} logs")
+            return True, dados
         
         except Exception as e:
             logger.error(f"❌ Erro ao exportar JSON: {str(e)}")
@@ -190,100 +233,95 @@ class BackupService:
             (sucesso: bool, mensagem: str)
         """
         try:
-            from app import Unidade, LogEtapa, db
+            from models import Unidade, LogEtapa, db
             
             # Validar formato
             if not isinstance(dados, dict) or dados.get('tipo') != 'checklist_backup':
                 return False, "Formato de arquivo inválido"
             
-            with db.app.app_context():
-                # Contar registros existentes antes
-                unidades_antes = Unidade.query.count()
-                logs_antes = LogEtapa.query.count()
-                
-                # Importar unidades
-                for u_data in dados.get('unidades', []):
-                    try:
-                        # Verificar se já existe (por ID)
-                        u_existente = Unidade.query.get(u_data['id'])
-                        if u_existente:
-                            # Atualizar
-                            u_existente.nome = u_data['nome']
-                            u_existente.cidade = u_data['cidade']
-                            u_existente.uf = u_data['uf']
-                            u_existente.tipo = u_data['tipo']
-                            u_existente.status_unidade = u_data['status_unidade']
-                            u_existente.checklist_status = u_data['checklist_status']
-                        else:
-                            # Criar novo
-                            nova_u = Unidade(
-                                id=u_data['id'],
-                                nome=u_data['nome'],
-                                cidade=u_data['cidade'],
-                                uf=u_data['uf'],
-                                tipo=u_data['tipo'],
-                                status_unidade=u_data['status_unidade'],
-                                checklist_status=u_data['checklist_status']
-                            )
-                            db.session.add(nova_u)
-                    except Exception as e:
-                        logger.warning(f"Erro ao importar unidade {u_data.get('id')}: {str(e)}")
-                        continue
-                
-                # Importar logs
-                for log_data in dados.get('logs', []):
-                    try:
-                        log_existente = LogEtapa.query.get(log_data['id'])
-                        if not log_existente:
-                            novo_log = LogEtapa(
-                                id=log_data['id'],
-                                unidade_id=log_data['unidade_id'],
-                                etapa=log_data['etapa'],
-                                acao=log_data['acao'],
-                                observacao=log_data['observacao'],
-                                data=datetime.fromisoformat(log_data['data'])
-                            )
-                            db.session.add(novo_log)
-                    except Exception as e:
-                        logger.warning(f"Erro ao importar log {log_data.get('id')}: {str(e)}")
-                        continue
-                
-                # Commit
-                db.session.commit()
-                
-                unidades_depois = Unidade.query.count()
-                logs_depois = LogEtapa.query.count()
-                
-                msg = f"✅ Importação concluída:\n"
-                msg += f"   Unidades: {unidades_antes} → {unidades_depois}\n"
-                msg += f"   Logs: {logs_antes} → {logs_depois}"
-                logger.info(msg)
-                
-                return True, msg
+            # Contar registros existentes antes
+            unidades_antes = Unidade.query.count()
+            logs_antes = LogEtapa.query.count()
+            
+            unidades_importadas = 0
+            logs_importados = 0
+            
+            # Importar unidades
+            for u_data in dados.get('unidades', []):
+                try:
+                    # Verificar se já existe (por ID)
+                    u_existente = Unidade.query.get(u_data['id'])
+                    if u_existente:
+                        # Atualizar
+                        u_existente.nome = u_data['nome']
+                        u_existente.cidade = u_data['cidade']
+                        u_existente.uf = u_data['uf']
+                        u_existente.tipo = u_data['tipo']
+                        u_existente.status_unidade = u_data['status_unidade']
+                        u_existente.checklist_status = u_data['checklist_status']
+                    else:
+                        # Criar novo
+                        nova_u = Unidade(
+                            id=u_data['id'],
+                            nome=u_data['nome'],
+                            cidade=u_data['cidade'],
+                            uf=u_data['uf'],
+                            tipo=u_data['tipo'],
+                            status_unidade=u_data['status_unidade'],
+                            checklist_status=u_data['checklist_status']
+                        )
+                        db.session.add(nova_u)
+                    unidades_importadas += 1
+                except Exception as e:
+                    logger.warning(f"Erro ao importar unidade {u_data.get('id')}: {str(e)}")
+                    continue
+            
+            # Importar logs
+            for log_data in dados.get('logs', []):
+                try:
+                    log_existente = LogEtapa.query.get(log_data['id'])
+                    if not log_existente:
+                        novo_log = LogEtapa(
+                            id=log_data['id'],
+                            unidade_id=log_data['unidade_id'],
+                            etapa=log_data['etapa'],
+                            acao=log_data['acao'],
+                            observacao=log_data['observacao'],
+                            data=datetime.fromisoformat(log_data['data'])
+                        )
+                        db.session.add(novo_log)
+                    logs_importados += 1
+                except Exception as e:
+                    logger.warning(f"Erro ao importar log {log_data.get('id')}: {str(e)}")
+                    continue
+            
+            # Commit
+            db.session.commit()
+            
+            unidades_depois = Unidade.query.count()
+            logs_depois = LogEtapa.query.count()
+            
+            msg = f"✅ Importação concluída:\n"
+            msg += f"   Unidades: {unidades_antes} → {unidades_depois}\n"
+            msg += f"   Logs: {logs_antes} → {logs_depois}"
+            logger.info(msg)
+            
+            return True, msg
         
         except Exception as e:
             logger.error(f"❌ Erro ao importar JSON: {str(e)}")
             db.session.rollback()
             return False, str(e)
     
-    def deletar_backup(self, nome_backup: str) -> tuple[bool, str]:
-        """Deleta um arquivo de backup"""
+    def deletar_backup(self, backup_id: str) -> tuple[bool, str]:
+        """Deleta um backup em memória"""
         try:
-            caminho_backup = os.path.join(self.backup_dir, nome_backup)
-            
-            # Validar segurança
-            backup_real = os.path.realpath(caminho_backup)
-            backup_dir_real = os.path.realpath(self.backup_dir)
-            
-            if not backup_real.startswith(backup_dir_real):
-                return False, "Arquivo de backup inválido"
-            
-            if not os.path.exists(caminho_backup):
+            if backup_id not in backups_em_memoria:
                 return False, "Backup não encontrado"
             
-            os.remove(caminho_backup)
-            logger.info(f"✅ Backup deletado: {nome_backup}")
-            return True, f"Backup deletado: {nome_backup}"
+            del backups_em_memoria[backup_id]
+            logger.info(f"✅ Backup deletado: {backup_id}")
+            return True, f"Backup deletado: {backup_id}"
         
         except Exception as e:
             logger.error(f"❌ Erro ao deletar backup: {str(e)}")
@@ -293,9 +331,9 @@ class BackupService:
 # Instância global
 backup_service = None
 
+
 def init_backup_service(app):
     """Inicializa o serviço de backup"""
     global backup_service
-    db_path = app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')
-    backup_service = BackupService(db_path)
+    backup_service = BackupService(app)
     return backup_service

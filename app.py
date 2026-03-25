@@ -1019,18 +1019,33 @@ def testar_email():
 
 @app.route('/status-email')
 def status_email():
-    """Verifica configuração atual de email"""
-    config = {
-        'MAIL_SERVER': app.config['MAIL_SERVER'],
-        'MAIL_PORT': app.config['MAIL_PORT'],
-        'MAIL_USE_TLS': app.config['MAIL_USE_TLS'],
-        'MAIL_USERNAME': app.config['MAIL_USERNAME'],
-        'MAIL_DEFAULT_SENDER': app.config['MAIL_DEFAULT_SENDER'],
-        'EMAIL_FRANQUEADO': os.environ.get('EMAIL_FRANQUEADO', 'Não configurado'),
-        'EMAIL_TIME': os.environ.get('EMAIL_TIME', 'Não configurado'),
-        'MAIL_PASSWORD': '******' if app.config['MAIL_PASSWORD'] else 'Não configurado'
+    """Verifica configuração atual de email e retorna diagnóstico completo"""
+    mail_configured = bool(app.config.get('MAIL_USERNAME') and app.config.get('MAIL_PASSWORD'))
+    
+    diagnostico = {
+        'configurado': mail_configured,
+        'config': {
+            'MAIL_SERVER': app.config['MAIL_SERVER'],
+            'MAIL_PORT': app.config['MAIL_PORT'],
+            'MAIL_USE_TLS': app.config['MAIL_USE_TLS'],
+            'MAIL_USERNAME': app.config['MAIL_USERNAME'] or '❌ NÃO CONFIGURADO',
+            'MAIL_PASSWORD': '✅ Configurado' if app.config['MAIL_PASSWORD'] else '❌ NÃO CONFIGURADO',
+            'MAIL_DEFAULT_SENDER': app.config['MAIL_DEFAULT_SENDER'],
+            'EMAIL_FRANQUEADO': os.environ.get('EMAIL_FRANQUEADO', 'Não configurado'),
+            'EMAIL_TIME': os.environ.get('EMAIL_TIME', 'Não configurado'),
+        },
+        'mensagem': ''
     }
-    return {'success': True, 'config': config}
+    
+    if not mail_configured:
+        diagnostico['mensagem'] = (
+            '❌ Email NÃO está configurado. '
+            'Adicione MAIL_USERNAME e MAIL_PASSWORD nas variáveis de ambiente do Render.'
+        )
+    else:
+        diagnostico['mensagem'] = '✅ Email está configurado corretamente'
+    
+    return diagnostico
 
 
 @app.route("/logs/<int:unidade_id>")
@@ -1105,7 +1120,7 @@ def criar_backup():
 
 @app.route('/adm/download-backup/<nome_backup>')
 def download_backup(nome_backup):
-    """Baixa um arquivo de backup"""
+    """Baixa um arquivo de backup como JSON"""
     if request.cookies.get('adm_auth') != 'true':
         return redirect(url_for('adm')), 401
     
@@ -1116,17 +1131,22 @@ def download_backup(nome_backup):
     if '..' in nome_backup or '/' in nome_backup or '\\' in nome_backup:
         return 'Acesso negado', 403
     
-    caminho_backup = os.path.join(backup_service.backup_dir, nome_backup)
+    sucesso, nome_arquivo, conteudo = backup_service.fazer_download_backup(nome_backup)
     
-    if not os.path.exists(caminho_backup):
-        return 'Arquivo não encontrado', 404
+    if not sucesso:
+        return 'Backup não encontrado', 404
     
     from flask import send_file
+    from io import BytesIO
+    
+    # Criar objeto filelike
+    dados = BytesIO(conteudo)
+    
     return send_file(
-        caminho_backup,
+        dados,
         as_attachment=True,
-        download_name=nome_backup,
-        mimetype='application/octet-stream'
+        download_name=nome_arquivo,
+        mimetype='application/json'
     )
 
 @app.route('/adm/restaurar/<nome_backup>', methods=['POST'])
@@ -1153,7 +1173,7 @@ def restaurar_backup(nome_backup):
 
 @app.route('/adm/deletar-backup/<nome_backup>', methods=['POST'])
 def deletar_backup(nome_backup):
-    """Deleta um arquivo de backup"""
+    """Deleta um backup"""
     if request.cookies.get('adm_auth') != 'true':
         return jsonify({'sucesso': False, 'erro': 'Não autenticado'}), 401
     
@@ -1175,7 +1195,7 @@ def deletar_backup(nome_backup):
 
 @app.route('/adm/upload-backup', methods=['POST'])
 def upload_backup():
-    """Faz upload de um arquivo de backup"""
+    """Faz upload de um arquivo de backup (JSON)"""
     if request.cookies.get('adm_auth') != 'true':
         return jsonify({'sucesso': False, 'erro': 'Não autenticado'}), 401
     
@@ -1184,27 +1204,32 @@ def upload_backup():
     
     arquivo = request.files['arquivo']
     
-    if not arquivo.filename.endswith('.db'):
-        return jsonify({'sucesso': False, 'erro': 'Arquivo deve ser .db'}), 400
+    if arquivo.filename == '':
+        return jsonify({'sucesso': False, 'erro': 'Arquivo vazio'}), 400
+    
+    # Aceitar .json ou .db
+    if not (arquivo.filename.endswith('.json') or arquivo.filename.endswith('.db')):
+        return jsonify({'sucesso': False, 'erro': 'Arquivo deve ser .json ou .db'}), 400
     
     try:
         from backup_service import init_backup_service
         backup_service = init_backup_service(app)
         
-        # Gerar nome único
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        nome_novo = f"checklist_backup_upload_{timestamp}.db"
-        caminho_destino = os.path.join(backup_service.backup_dir, nome_novo)
+        # Ler conteúdo do arquivo
+        conteudo = arquivo.read()
         
-        # Salvar arquivo
-        arquivo.save(caminho_destino)
+        # Fazer upload
+        sucesso, mensagem = backup_service.fazer_upload_backup(conteudo)
         
-        logger.info(f"✅ Backup enviado: {nome_novo}")
-        return jsonify({
-            'sucesso': True,
-            'mensagem': f'Arquivo enviado: {nome_novo}',
-            'arquivo': nome_novo
-        })
+        if sucesso:
+            logger.info(f"✅ Backup importado: {arquivo.filename}")
+            return jsonify({
+                'sucesso': True,
+                'mensagem': mensagem
+            })
+        else:
+            logger.error(f"❌ Erro ao importar: {mensagem}")
+            return jsonify({'sucesso': False, 'erro': mensagem}), 400
     
     except Exception as e:
         logger.error(f"❌ Erro ao fazer upload: {str(e)}")
