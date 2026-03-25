@@ -429,9 +429,9 @@
                     <div class="upload-area" id="uploadArea">
                         <div class="upload-text">
                             📁 Arraste um arquivo aqui ou clique para selecionar
-                            <small>Aceita arquivos .db</small>
+                            <small>Aceita arquivos .json ou .db</small>
                         </div>
-                        <input type="file" id="fileInput" accept=".db" />
+                        <input type="file" id="fileInput" accept=".json,.db" />
                         <div class="progress" id="progress">
                             <div class="progress-bar" id="progressBar"></div>
                         </div>
@@ -526,8 +526,8 @@
             const file = fileInput.files[0];
             if (!file) return;
             
-            if (!file.name.endsWith('.db')) {
-                alert('❌ Arquivo deve ser um .db!');
+            if (!file.name.endsWith('.db') && !file.name.endsWith('.json')) {
+                alert('❌ Arquivo deve ser um .json ou .db!');
                 return;
             }
             
