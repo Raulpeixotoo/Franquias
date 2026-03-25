@@ -18,8 +18,10 @@ from dotenv import load_dotenv
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 load_dotenv(os.path.join(basedir, ".env"))
-print("MAIL_USERNAME:", os.getenv("MAIL_USERNAME"))
-print("MAIL_PASSWORD:", os.getenv("MAIL_PASSWORD"))
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 app = Flask(
@@ -43,7 +45,7 @@ database_url = os.environ.get('DATABASE_URL')
 if database_url:
     database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    print("✅ Usando PostgreSQL (Produção)")
+    logger.info("✅ Usando PostgreSQL (Produção)")
     
     if 'postgresql' in database_url and 'asyncpg' not in database_url:
         database_url = database_url.replace('postgresql://', 'postgresql+asyncpg://')
@@ -65,13 +67,13 @@ else:
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,
     }
-    print(f"✅ Usando SQLite (Desenvolvimento Local): {db_path}")
+    logger.info(f"✅ Usando SQLite (Desenvolvimento Local): {db_path}")
 
-# Configurações comuns
+# Configurações 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'chave-desenvolvimento-local-temporaria')
 
-# Configuração do Mail - CORRIGIDA
+# Configuração do Mail
 app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
 app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'True').lower() == 'true'
@@ -333,25 +335,34 @@ def classificar_prazos(unidades, categorias):
 
 # ==================== FUNÇÕES DE EMAIL CORRIGIDAS ====================
 
-def enviar_email_async(app_context, msg):
-    """Envia email em background para não travar a aplicação"""
-    try:
-        with app_context:
-            mail.send(msg)
-            print(f"✅ Email enviado com sucesso para: {', '.join(msg.recipients)}")
-            return True
-    except Exception as e:
-        print(f"❌ ERRO DETALHADO AO ENVIAR EMAIL:")
-        traceback.print_exc()
-        print(f"Configuração atual: Servidor={app.config['MAIL_SERVER']}, Porta={app.config['MAIL_PORT']}, TLS={app.config['MAIL_USE_TLS']}")
-        return False
+def enviar_email_async(app_context, msg, retries=3):
+    """Envia email em background com retry logic"""
+    for tentativa in range(retries):
+        try:
+            with app_context:
+                mail.send(msg)
+                logger.info(f"✅ Email enviado com sucesso para: {', '.join(msg.recipients)}")
+                return True
+        except Exception as e:
+            if tentativa < retries - 1:
+                logger.warning(f"Tentativa {tentativa + 1}/{retries} falhou. Tentando novamente...")
+                import time
+                time.sleep(2 ** tentativa)  # Exponential backoff
+            else:
+                logger.error(f"❌ Falha ao enviar email após {retries} tentativas: {str(e)}")
+                return False
+
+def validar_email(email):
+    """Valida formato de email"""
+    padrao = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(padrao, email) is not None
 
 def enviar_email(destinatarios, assunto, corpo_html, corpo_text=None):
     """Função principal para enviar emails"""
     try:
         # Validar configuração
         if not app.config['MAIL_USERNAME'] or not app.config['MAIL_PASSWORD']:
-            print("❌ MAIL_USERNAME ou MAIL_PASSWORD não configurados")
+            logger.error("❌ MAIL_USERNAME ou MAIL_PASSWORD não configurados")
             return False, "Configuração de email incompleta"
         
         # Garantir que destinatários seja uma lista
@@ -361,13 +372,13 @@ def enviar_email(destinatarios, assunto, corpo_html, corpo_text=None):
         # Validar emails
         emails_validos = []
         for email in destinatarios:
-            if re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            if validar_email(email):
                 emails_validos.append(email)
             else:
-                print(f"Email inválido ignorado: {email}")
+                logger.warning(f"Email inválido ignorado: {email}")
         
         if not emails_validos:
-            print("Nenhum email válido para enviar")
+            logger.warning("Nenhum email válido para enviar")
             return False, "Nenhum email válido"
         
         msg = Message(
@@ -376,7 +387,6 @@ def enviar_email(destinatarios, assunto, corpo_html, corpo_text=None):
             html=corpo_html,
             body=corpo_text or "Por favor, visualize este email em um cliente HTML."
         )
-
         
         # Envia em background
         app_context = app.app_context()
@@ -384,38 +394,28 @@ def enviar_email(destinatarios, assunto, corpo_html, corpo_text=None):
         thread.daemon = True
         thread.start()
         
+        logger.info(f"Email agendado para envio: {', '.join(emails_validos)}")
         return True, f"Enviando para: {', '.join(emails_validos)}"
         
     except Exception as e:
-        print(f"Erro ao preparar email: {str(e)}")
-        traceback.print_exc()
+        logger.error(f"Erro ao preparar email: {str(e)}")
         return False, str(e)
 
-def registrar_log(unidade_id, etapa, status, observacao=None):
-
-    log = LogEtapa(
-        unidade_id=unidade_id,
-        etapa=etapa,
-        acao=status,
-        observacao=observacao
-    )
-
-
-
-    db.session.add(log)
-    db.session.commit()
-
 def registrar_log(unidade_id, etapa, acao, observacao=None):
-
-    log = LogEtapa(
-        unidade_id=unidade_id,
-        etapa=etapa,
-        acao=acao,
-        observacao=observacao
-    )
-
-    db.session.add(log)
-    db.session.commit()
+    """Registra um log de etapa para auditoria"""
+    try:
+        log = LogEtapa(
+            unidade_id=unidade_id,
+            etapa=etapa,
+            acao=acao,
+            observacao=observacao
+        )
+        db.session.add(log)
+        db.session.commit()
+        logger.info(f"Log registrado: Unidade {unidade_id} - {etapa} - {acao}")
+    except Exception as e:
+        logger.error(f"Erro ao registrar log: {str(e)}")
+        db.session.rollback()
 
 
 def verificar_prazos_e_notificar(unidade, status_salvo):
@@ -675,83 +675,7 @@ def gerenciar(id):
                            email_franqueado=os.environ.get('EMAIL_FRANQUEADO', 'Não configurado'),
                            email_time=os.environ.get('EMAIL_TIME', 'Não configurado'))
 
-@app.route('/dashboard')
-def dashboard():
-    unidades = Unidade.query.all()
-    total = len(unidades)
-    abertas = sum(1 for u in unidades if u.status_unidade == 'aberta')
-    em_processo = sum(1 for u in unidades if u.status_unidade in ['processo', 'pronta'])
-    fechadas = sum(1 for u in unidades if u.status_unidade == 'fechada')
-    
-    progressos = []
-    for u in unidades:
-        try:
-            dados = json.loads(u.checklist_status) if u.checklist_status else {}
-            total_itens = sum(len(itens) for itens in CATEGORIAS_REQUISITOS.values())
-            concluidos = 0
-            for item_config in sum(CATEGORIAS_REQUISITOS.values(), []):
-                item_nome = item_config['nome']
-                info = dados.get(item_nome, {})
-                if item_config['tipo'] == 'checkbox':
-                    if isinstance(info, dict) and info.get('concluido', False):
-                        concluidos += 1
-                else:
-                    if info and info != '':
-                        concluidos += 1
-            progresso = (concluidos / total_itens * 100) if total_itens > 0 else 0
-            progressos.append(progresso)
-        except:
-            progressos.append(0)
-    
-    progresso_medio = sum(progressos) / len(progressos) if progressos else 0
-    ufs = Counter(u.uf for u in unidades)
-    tipos = Counter(u.tipo for u in unidades)
-    
-    atrasos_por_categoria = {cat: 0 for cat in CATEGORIAS_REQUISITOS.keys()}
-    for u in unidades:
-        atrasados = verificar_atrasados(u.checklist_status)
-        for item_atrasado in atrasados:
-            for cat, itens in CATEGORIAS_REQUISITOS.items():
-                for item_config in itens:
-                    if item_config['nome'] == item_atrasado['nome']:
-                        atrasos_por_categoria[cat] += 1
-    
-    hoje = date.today()
-    proximos_vencimentos = []
-    for u in unidades:
-        try:
-            dados = json.loads(u.checklist_status) if u.checklist_status else {}
-            for item_nome, info in dados.items():
-                if isinstance(info, dict):
-                    previsao = info.get('previsao', '')
-                    concluido = info.get('concluido', False)
-                    if previsao and not concluido:
-                        data_prev = date.fromisoformat(previsao)
-                        dias_para_vencer = (data_prev - hoje).days
-                        if 0 <= dias_para_vencer <= 7:
-                            proximos_vencimentos.append({
-                                'unidade': u.nome,
-                                'item': item_nome,
-                                'data': previsao,
-                                'dias': dias_para_vencer
-                            })
-        except:
-            pass
-    
-    proximos_vencimentos.sort(key=lambda x: x['dias'])
-    
-    return render_template('dashboard.html',
-                           total=total,
-                           abertas=abertas,
-                           em_processo=em_processo,
-                           fechadas=fechadas,
-                           progresso_medio=round(progresso_medio, 1),
-                           ufs=dict(ufs),
-                           tipos=dict(tipos),
-                           atrasos_por_categoria=atrasos_por_categoria,
-                           proximos_vencimentos=proximos_vencimentos[:10],
-                           status_unidade_opts=STATUS_UNIDADE,
-                           tipos_unidade=TIPOS_UNIDADE)
+# Dashboard removido - usar /adm para gerenciar backups
 
 @app.route('/deletar/<int:id>', methods=['POST'])
 def deletar(id):
@@ -769,7 +693,7 @@ def encontrar_nome_por_id(id_item):
 
 @app.route('/notificar/<int:unidade_id>', methods=['POST'])
 def notificar_unidade(unidade_id):
-    
+
     unidade = Unidade.query.get_or_404(unidade_id)
 
     status_salvo = json.loads(unidade.checklist_status or "{}")
@@ -1119,11 +1043,178 @@ def ver_logs(unidade_id):
 
     return render_template("logs.html", logs=logs, unidade=unidade)
 
+# ==================== PAINEL ADMINISTRATIVO (BACKUP) ====================
+
+def autenticar_adm(senha):
+    """Verifica autenticação do painel ADM"""
+    senha_correta = os.environ.get('ADM_PASSWORD', 'admin123')
+    return senha == senha_correta
+
+@app.route('/adm', methods=['GET', 'POST'])
+def adm():
+    """Painel administrativo com backup/restore"""
+    # Se for POST, validar senha
+    if request.method == 'POST':
+        senha = request.form.get('senha', '')
+        if not autenticar_adm(senha):
+            return render_template('adm.html', 
+                                 erro='Senha incorreta!',
+                                 autenticado=False), 401
+    
+    # Verificar se está autenticado (via sessão)
+    autenticado = request.args.get('auth') == '1' or \
+                  request.cookies.get('adm_auth') == 'true'
+    
+    if request.method == 'POST' and autenticar_adm(request.form.get('senha', '')):
+        autenticado = True
+    
+    if not autenticado:
+        return render_template('adm.html', 
+                             erro=None,
+                             autenticado=False)
+    
+    # Inicializar serviço de backup
+    from backup_service import init_backup_service
+    backup_service = init_backup_service(app)
+    
+    # Listar backups disponíveis
+    backups = backup_service.listar_backups()
+    
+    return render_template('adm.html',
+                         autenticado=True,
+                         backups=backups,
+                         erro=None)
+
+@app.route('/adm/criar-backup')
+def criar_backup():
+    """Cria um novo backup"""
+    if request.cookies.get('adm_auth') != 'true':
+        return redirect(url_for('adm'))
+    
+    from backup_service import init_backup_service
+    backup_service = init_backup_service(app)
+    
+    sucesso, nome_arquivo = backup_service.criar_backup()
+    
+    if sucesso:
+        logger.info(f"✅ Backup criado: {nome_arquivo}")
+        return redirect(url_for('adm', msg='Backup criado com sucesso!'))
+    else:
+        logger.error(f"❌ Erro ao criar backup: {nome_arquivo}")
+        return redirect(url_for('adm', erro=nome_arquivo))
+
+@app.route('/adm/download-backup/<nome_backup>')
+def download_backup(nome_backup):
+    """Baixa um arquivo de backup"""
+    if request.cookies.get('adm_auth') != 'true':
+        return redirect(url_for('adm')), 401
+    
+    from backup_service import init_backup_service
+    backup_service = init_backup_service(app)
+    
+    # Validar segurança
+    if '..' in nome_backup or '/' in nome_backup or '\\' in nome_backup:
+        return 'Acesso negado', 403
+    
+    caminho_backup = os.path.join(backup_service.backup_dir, nome_backup)
+    
+    if not os.path.exists(caminho_backup):
+        return 'Arquivo não encontrado', 404
+    
+    from flask import send_file
+    return send_file(
+        caminho_backup,
+        as_attachment=True,
+        download_name=nome_backup,
+        mimetype='application/octet-stream'
+    )
+
+@app.route('/adm/restaurar/<nome_backup>', methods=['POST'])
+def restaurar_backup(nome_backup):
+    """Restaura um backup"""
+    if request.cookies.get('adm_auth') != 'true':
+        return jsonify({'sucesso': False, 'erro': 'Não autenticado'}), 401
+    
+    from backup_service import init_backup_service
+    backup_service = init_backup_service(app)
+    
+    # Validar segurança
+    if '..' in nome_backup or '/' in nome_backup or '\\' in nome_backup:
+        return jsonify({'sucesso': False, 'erro': 'Nome de arquivo inválido'}), 403
+    
+    sucesso, mensagem = backup_service.restaurar_backup(nome_backup)
+    
+    if sucesso:
+        logger.info(f"✅ Backup restaurado: {nome_backup}")
+        return jsonify({'sucesso': True, 'mensagem': mensagem})
+    else:
+        logger.error(f"❌ Erro ao restaurar: {mensagem}")
+        return jsonify({'sucesso': False, 'erro': mensagem}), 400
+
+@app.route('/adm/deletar-backup/<nome_backup>', methods=['POST'])
+def deletar_backup(nome_backup):
+    """Deleta um arquivo de backup"""
+    if request.cookies.get('adm_auth') != 'true':
+        return jsonify({'sucesso': False, 'erro': 'Não autenticado'}), 401
+    
+    from backup_service import init_backup_service
+    backup_service = init_backup_service(app)
+    
+    # Validar segurança
+    if '..' in nome_backup or '/' in nome_backup or '\\' in nome_backup:
+        return jsonify({'sucesso': False, 'erro': 'Nome de arquivo inválido'}), 403
+    
+    sucesso, mensagem = backup_service.deletar_backup(nome_backup)
+    
+    if sucesso:
+        logger.info(f"✅ Backup deletado: {nome_backup}")
+        return jsonify({'sucesso': True, 'mensagem': mensagem})
+    else:
+        logger.error(f"❌ Erro ao deletar: {mensagem}")
+        return jsonify({'sucesso': False, 'erro': mensagem}), 400
+
+@app.route('/adm/upload-backup', methods=['POST'])
+def upload_backup():
+    """Faz upload de um arquivo de backup"""
+    if request.cookies.get('adm_auth') != 'true':
+        return jsonify({'sucesso': False, 'erro': 'Não autenticado'}), 401
+    
+    if 'arquivo' not in request.files:
+        return jsonify({'sucesso': False, 'erro': 'Nenhum arquivo enviado'}), 400
+    
+    arquivo = request.files['arquivo']
+    
+    if not arquivo.filename.endswith('.db'):
+        return jsonify({'sucesso': False, 'erro': 'Arquivo deve ser .db'}), 400
+    
+    try:
+        from backup_service import init_backup_service
+        backup_service = init_backup_service(app)
+        
+        # Gerar nome único
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        nome_novo = f"checklist_backup_upload_{timestamp}.db"
+        caminho_destino = os.path.join(backup_service.backup_dir, nome_novo)
+        
+        # Salvar arquivo
+        arquivo.save(caminho_destino)
+        
+        logger.info(f"✅ Backup enviado: {nome_novo}")
+        return jsonify({
+            'sucesso': True,
+            'mensagem': f'Arquivo enviado: {nome_novo}',
+            'arquivo': nome_novo
+        })
+    
+    except Exception as e:
+        logger.error(f"❌ Erro ao fazer upload: {str(e)}")
+        return jsonify({'sucesso': False, 'erro': str(e)}), 400
+
 # ==================== INICIALIZAÇÃO ====================
 
 with app.app_context():
     db.create_all()
-    print("✅ Banco de dados inicializado")
+    logger.info("✅ Banco de dados inicializado")
 
 @app.context_processor
 def utility_processor():
@@ -1136,9 +1227,9 @@ def utility_processor():
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"\n{'='*50}")
-    print(f"🚀 Servidor iniciado em: http://localhost:{port}")
-    print(f"📧 Status do Email: {app.config['MAIL_USERNAME']}")
-    print(f"{'='*50}\n")
+    logger.info(f"\n{'='*50}")
+    logger.info(f"🚀 Servidor iniciado em: http://localhost:{port}")
+    logger.info(f"📧 Email configurado: {bool(app.config['MAIL_USERNAME'])}")
+    logger.info(f"{'='*50}\n")
     
     app.run(host='0.0.0.0', port=port, debug=False)
